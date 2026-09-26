@@ -57,18 +57,10 @@ export default function AdminPanel() {
   >("overview");
 
   const [investors, setInvestors] = useState<Investor[]>([]);
-  const [selectedInvestor, setSelectedInvestor] =
-    useState<Investor | null>(null);
-  const [editingInvestorId, setEditingInvestorId] =
-    useState<string | null>(null);
-
+  const [selectedInvestor, setSelectedInvestor] = useState<Investor | null>(null);
+  const [editingInvestorId, setEditingInvestorId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [editingProjectId, setEditingProjectId] =
-    useState<string | null>(null);
-
   const [tickers, setTickers] = useState<Ticker[]>([]);
-  const [editingTickerId, setEditingTickerId] =
-    useState<string | null>(null);
 
   const [message, setMessage] = useState("");
   const [accountLoading, setAccountLoading] = useState(false);
@@ -90,11 +82,14 @@ export default function AdminPanel() {
     confirmPassword: "",
   });
 
+  const [passwordOtp, setPasswordOtp] = useState("");
+  const [passwordOtpStep, setPasswordOtpStep] = useState(false);
+
   /* =========================
      INVESTOR FORM
   ========================= */
 
-  const emptyInvestorForm = {
+  const [investorForm, setInvestorForm] = useState({
     serial_number: "1",
     name: "",
     nid: "",
@@ -108,16 +103,13 @@ export default function AdminPanel() {
     profit: "0",
     phone: "",
     address: "",
-  };
-
-  const [investorForm, setInvestorForm] =
-    useState(emptyInvestorForm);
+  });
 
   /* =========================
      PROJECT FORM
   ========================= */
 
-  const emptyProjectForm = {
+  const [projectForm, setProjectForm] = useState({
     name: "",
     location: "",
     sector: "",
@@ -125,26 +117,23 @@ export default function AdminPanel() {
     status: "Active",
     image_url: "",
     display_order: "0",
-  };
-
-  const [projectForm, setProjectForm] =
-    useState(emptyProjectForm);
+  });
 
   /* =========================
      MARKET FORM
   ========================= */
 
-  const emptyTickerForm = {
+  const [tickerForm, setTickerForm] = useState({
     name: "",
     symbol: "",
     price: "0",
     change_percent: "0",
     direction: "up" as "up" | "down",
     display_order: "0",
-  };
+  });
 
-  const [tickerForm, setTickerForm] =
-    useState(emptyTickerForm);
+  const [editingTickerId, setEditingTickerId] =
+    useState<string | null>(null);
 
   /* =========================
      WEBSITE FORM
@@ -252,22 +241,16 @@ export default function AdminPanel() {
         total_investment: Number(
           item.total_investment
         ),
-        total_return: Number(
-          item.total_return
-        ),
+        total_return: Number(item.total_return),
         total_returned: Number(
           item.total_returned
         ),
-        due_amount: Number(
-          item.due_amount
-        ),
+        due_amount: Number(item.due_amount),
         profit: Number(item.profit),
       }))
     );
 
-    setProjects(
-      (projectsResult.data || []) as Project[]
-    );
+    setProjects(projectsResult.data || []);
 
     setTickers(
       (tickersResult.data || []).map((item) => ({
@@ -314,6 +297,7 @@ export default function AdminPanel() {
     e: React.FormEvent<HTMLFormElement>
   ) {
     e.preventDefault();
+
     setMessage("");
 
     const newEmail =
@@ -323,9 +307,7 @@ export default function AdminPanel() {
       emailForm.currentPassword;
 
     if (!newEmail) {
-      setMessage(
-        "New admin email is required."
-      );
+      setMessage("New admin email is required.");
       return;
     }
 
@@ -375,13 +357,15 @@ export default function AdminPanel() {
       }
 
       setMessage(
-        "Email change request sent. Complete the confirmation from your email."
+        "Email change request sent. Please complete the email confirmation from the required inbox(es)."
       );
 
       setEmailForm({
         newEmail: "",
         currentPassword: "",
       });
+
+      await loadAdminAccount();
     } finally {
       setAccountLoading(false);
     }
@@ -389,7 +373,6 @@ export default function AdminPanel() {
 
   /* =========================
      CHANGE ADMIN PASSWORD
-     OTP REMOVED
   ========================= */
 
   async function changeAdminPassword(
@@ -398,70 +381,77 @@ export default function AdminPanel() {
     e.preventDefault();
     setMessage("");
 
-    const currentPassword =
-      passwordForm.currentPassword;
-
-    const newPassword =
-      passwordForm.newPassword;
-
-    const confirmPassword =
-      passwordForm.confirmPassword;
+    const currentPassword = passwordForm.currentPassword;
+    const newPassword = passwordForm.newPassword;
+    const confirmPassword = passwordForm.confirmPassword;
 
     if (!currentPassword) {
-      setMessage(
-        "Current password is required."
-      );
+      setMessage("Current password is required.");
       return;
     }
 
     if (!newPassword) {
-      setMessage(
-        "New password is required."
-      );
+      setMessage("New password is required.");
       return;
     }
 
     if (newPassword.length < 8) {
-      setMessage(
-        "New password must be at least 8 characters."
-      );
+      setMessage("New password must be at least 8 characters.");
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setMessage(
-        "New password and confirm password do not match."
-      );
+      setMessage("New password and confirm password do not match.");
       return;
     }
 
     if (currentPassword === newPassword) {
-      setMessage(
-        "New password must be different from the current password."
-      );
+      setMessage("New password must be different from the current password.");
       return;
     }
 
     setAccountLoading(true);
 
     try {
-      const { error: verifyError } =
-        await supabase.auth.signInWithPassword({
-          email: currentEmail,
-          password: currentPassword,
-        });
+      if (!passwordOtpStep) {
+        const { error: verifyError } =
+          await supabase.auth.signInWithPassword({
+            email: currentEmail,
+            password: currentPassword,
+          });
 
-      if (verifyError) {
+        if (verifyError) {
+          setMessage("Current password is incorrect.");
+          return;
+        }
+
+        const { error: reauthError } =
+          await supabase.auth.reauthenticate();
+
+        if (reauthError) {
+          setMessage(
+            `Could not send Gmail verification code: ${reauthError.message}`
+          );
+          return;
+        }
+
+        setPasswordOtp("");
+        setPasswordOtpStep(true);
         setMessage(
-          "Current password is incorrect."
+          "A 6-digit verification code has been sent to the admin Gmail."
         );
         return;
       }
 
-      const { error } =
-        await supabase.auth.updateUser({
-          password: newPassword,
-        });
+      if (!/^\d{6}$/.test(passwordOtp.trim())) {
+        setMessage("Enter the 6-digit Gmail verification code.");
+        return;
+      }
+
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+        nonce: passwordOtp.trim(),
+      });
 
       if (error) {
         setMessage(
@@ -470,15 +460,14 @@ export default function AdminPanel() {
         return;
       }
 
-      setMessage(
-        "Admin password changed successfully."
-      );
-
+      setMessage("Admin password changed successfully.");
       setPasswordForm({
         currentPassword: "",
         newPassword: "",
         confirmPassword: "",
       });
+      setPasswordOtp("");
+      setPasswordOtpStep(false);
     } finally {
       setAccountLoading(false);
     }
@@ -495,30 +484,22 @@ export default function AdminPanel() {
     setMessage("");
 
     if (!investorForm.name.trim()) {
-      setMessage(
-        "Investor name is required."
-      );
+      setMessage("Investor name is required.");
       return;
     }
 
     if (!investorForm.email.trim()) {
-      setMessage(
-        "Investor email is required."
-      );
+      setMessage("Investor email is required.");
       return;
     }
 
     if (!investorForm.username.trim()) {
-      setMessage(
-        "Investor username is required."
-      );
+      setMessage("Investor username is required.");
       return;
     }
 
     if (!investorForm.password) {
-      setMessage(
-        "Investor password is required."
-      );
+      setMessage("Investor password is required.");
       return;
     }
 
@@ -544,16 +525,10 @@ export default function AdminPanel() {
             name: investorForm.name.trim(),
             nid:
               investorForm.nid.trim() || null,
-            email:
-              investorForm.email
-                .trim()
-                .toLowerCase(),
+            email: investorForm.email.trim(),
             username:
-              investorForm.username
-                .trim()
-                .toLowerCase(),
-            password:
-              investorForm.password,
+              investorForm.username.trim(),
+            password: investorForm.password,
             total_investment: Number(
               investorForm.total_investment
             ),
@@ -570,20 +545,16 @@ export default function AdminPanel() {
               investorForm.profit
             ),
             phone:
-              investorForm.phone.trim() ||
-              null,
+              investorForm.phone.trim() || null,
             address:
-              investorForm.address.trim() ||
-              null,
+              investorForm.address.trim() || null,
             is_active: true,
           }),
         }
       );
 
       const result =
-        await response.json().catch(
-          () => ({})
-        );
+        await response.json().catch(() => ({}));
 
       if (!response.ok) {
         setMessage(
@@ -597,9 +568,21 @@ export default function AdminPanel() {
         "Investor added successfully."
       );
 
-      setInvestorForm(
-        emptyInvestorForm
-      );
+      setInvestorForm({
+        serial_number: "1",
+        name: "",
+        nid: "",
+        email: "",
+        username: "",
+        password: "",
+        total_investment: "0",
+        total_return: "0",
+        total_returned: "0",
+        due_amount: "0",
+        profit: "0",
+        phone: "",
+        address: "",
+      });
 
       await loadAll();
     } catch (error) {
@@ -615,64 +598,58 @@ export default function AdminPanel() {
      INVESTOR - VIEW
   ========================= */
 
-  function viewInvestor(
-    investor: Investor
-  ) {
+  function viewInvestor(investor: Investor) {
     setSelectedInvestor(investor);
     setEditingInvestorId(null);
     setMessage("");
   }
 
   /* =========================
-     INVESTOR - EDIT
+     INVESTOR - START EDIT
   ========================= */
 
-  function startEditInvestor(
-    investor: Investor
-  ) {
-    setEditingInvestorId(
-      investor.id
-    );
-
+  function startEditInvestor(investor: Investor) {
+    setEditingInvestorId(investor.id);
     setSelectedInvestor(null);
-
     setInvestorForm({
-      serial_number:
-        String(investor.serial_number),
+      serial_number: String(investor.serial_number),
       name: investor.name || "",
       nid: investor.nid || "",
       email: investor.email || "",
-      username:
-        investor.username || "",
+      username: investor.username || "",
       password: "",
-      total_investment: String(
-        investor.total_investment ?? 0
-      ),
-      total_return: String(
-        investor.total_return ?? 0
-      ),
-      total_returned: String(
-        investor.total_returned ?? 0
-      ),
-      due_amount: String(
-        investor.due_amount ?? 0
-      ),
-      profit: String(
-        investor.profit ?? 0
-      ),
+      total_investment: String(investor.total_investment ?? 0),
+      total_return: String(investor.total_return ?? 0),
+      total_returned: String(investor.total_returned ?? 0),
+      due_amount: String(investor.due_amount ?? 0),
+      profit: String(investor.profit ?? 0),
       phone: investor.phone || "",
-      address:
-        investor.address || "",
+      address: investor.address || "",
     });
-
     setMessage("");
   }
 
+  /* =========================
+     INVESTOR - CANCEL EDIT
+  ========================= */
+
   function cancelEditInvestor() {
     setEditingInvestorId(null);
-    setInvestorForm(
-      emptyInvestorForm
-    );
+    setInvestorForm({
+      serial_number: "1",
+      name: "",
+      nid: "",
+      email: "",
+      username: "",
+      password: "",
+      total_investment: "0",
+      total_return: "0",
+      total_returned: "0",
+      due_amount: "0",
+      profit: "0",
+      phone: "",
+      address: "",
+    });
     setMessage("");
   }
 
@@ -680,33 +657,24 @@ export default function AdminPanel() {
      INVESTOR - UPDATE
   ========================= */
 
-  async function updateInvestor(
-    e: React.FormEvent<HTMLFormElement>
-  ) {
+  async function updateInvestor(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     if (!editingInvestorId) return;
-
     setMessage("");
 
     if (!investorForm.name.trim()) {
-      setMessage(
-        "Investor name is required."
-      );
+      setMessage("Investor name is required.");
       return;
     }
 
     if (!investorForm.email.trim()) {
-      setMessage(
-        "Investor email is required."
-      );
+      setMessage("Investor email is required.");
       return;
     }
 
     if (!investorForm.username.trim()) {
-      setMessage(
-        "Investor username is required."
-      );
+      setMessage("Investor username is required.");
       return;
     }
 
@@ -719,109 +687,37 @@ export default function AdminPanel() {
       investorForm.profit,
     ].map(Number);
 
-    if (
-      numericValues.some(
-        (value) => !Number.isFinite(value)
-      )
-    ) {
-      setMessage(
-        "Investor numeric values must be valid numbers."
-      );
+    if (numericValues.some((value) => !Number.isFinite(value))) {
+      setMessage("Investor numeric values must be valid numbers.");
       return;
     }
 
     const { error } = await supabase
       .from("investors")
       .update({
-        serial_number:
-          numericValues[0],
-        name:
-          investorForm.name.trim(),
-        nid:
-          investorForm.nid.trim() ||
-          null,
-        email:
-          investorForm.email
-            .trim()
-            .toLowerCase(),
-        username:
-          investorForm.username
-            .trim()
-            .toLowerCase(),
-        total_investment:
-          numericValues[1],
-        total_return:
-          numericValues[2],
-        total_returned:
-          numericValues[3],
-        due_amount:
-          numericValues[4],
-        profit:
-          numericValues[5],
-        phone:
-          investorForm.phone.trim() ||
-          null,
-        address:
-          investorForm.address.trim() ||
-          null,
-        updated_at:
-          new Date().toISOString(),
+        serial_number: numericValues[0],
+        name: investorForm.name.trim(),
+        nid: investorForm.nid.trim() || null,
+        email: investorForm.email.trim().toLowerCase(),
+        username: investorForm.username.trim().toLowerCase(),
+        total_investment: numericValues[1],
+        total_return: numericValues[2],
+        total_returned: numericValues[3],
+        due_amount: numericValues[4],
+        profit: numericValues[5],
+        phone: investorForm.phone.trim() || null,
+        address: investorForm.address.trim() || null,
+        updated_at: new Date().toISOString(),
       })
-      .eq(
-        "id",
-        editingInvestorId
-      );
+      .eq("id", editingInvestorId);
 
     if (error) {
-      setMessage(
-        `Could not update investor: ${error.message}`
-      );
+      setMessage(`Could not update investor: ${error.message}`);
       return;
     }
 
-    setMessage(
-      "Investor data updated successfully."
-    );
-
+    setMessage("Investor data updated successfully.");
     cancelEditInvestor();
-    await loadAll();
-  }
-
-  /* =========================
-     INVESTOR - ACTIVE / INACTIVE
-  ========================= */
-
-  async function toggleInvestor(
-    investor: Investor
-  ) {
-    setMessage("");
-
-    const { error } = await supabase
-      .from("investors")
-      .update({
-        is_active:
-          !investor.is_active,
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq(
-        "id",
-        investor.id
-      );
-
-    if (error) {
-      setMessage(
-        `Could not change investor status: ${error.message}`
-      );
-      return;
-    }
-
-    setMessage(
-      investor.is_active
-        ? "Investor account deactivated."
-        : "Investor account activated."
-    );
-
     await loadAll();
   }
 
@@ -829,13 +725,10 @@ export default function AdminPanel() {
      INVESTOR - DELETE
   ========================= */
 
-  async function deleteInvestor(
-    id: string
-  ) {
-    const confirmed =
-      window.confirm(
-        "Delete this investor account permanently?"
-      );
+  async function deleteInvestor(id: string) {
+    const confirmed = window.confirm(
+      "Delete this investor account permanently?"
+    );
 
     if (!confirmed) return;
 
@@ -847,8 +740,7 @@ export default function AdminPanel() {
         {
           method: "DELETE",
           headers: {
-            "Content-Type":
-              "application/json",
+            "Content-Type": "application/json",
           },
           body: JSON.stringify({
             investorId: id,
@@ -857,9 +749,7 @@ export default function AdminPanel() {
       );
 
       const result =
-        await response.json().catch(
-          () => ({})
-        );
+        await response.json().catch(() => ({}));
 
       if (!response.ok) {
         setMessage(
@@ -875,6 +765,11 @@ export default function AdminPanel() {
 
       await loadAll();
     } catch (error) {
+      console.error(
+        "Delete investor error:",
+        error
+      );
+
       setMessage(
         error instanceof Error
           ? error.message
@@ -884,10 +779,10 @@ export default function AdminPanel() {
   }
 
   /* =========================
-     PROJECT - ADD / UPDATE
+     PROJECT - ADD
   ========================= */
 
-  async function saveProject(
+  async function addProject(
     e: React.FormEvent<HTMLFormElement>
   ) {
     e.preventDefault();
@@ -895,9 +790,7 @@ export default function AdminPanel() {
     setMessage("");
 
     if (!projectForm.name.trim()) {
-      setMessage(
-        "Project name is required."
-      );
+      setMessage("Project name is required.");
       return;
     }
 
@@ -912,144 +805,44 @@ export default function AdminPanel() {
       return;
     }
 
-    const payload = {
-      name:
-        projectForm.name.trim(),
-      location:
-        projectForm.location.trim() ||
-        null,
-      sector:
-        projectForm.sector.trim() ||
-        null,
-      description:
-        projectForm.description.trim() ||
-        null,
-      status:
-        projectForm.status.trim() ||
-        "Active",
-      image_url:
-        projectForm.image_url.trim() ||
-        null,
-      display_order:
-        displayOrder,
-      updated_at:
-        new Date().toISOString(),
-    };
-
-    let error;
-
-    if (editingProjectId) {
-      const result = await supabase
-        .from("projects")
-        .update(payload)
-        .eq(
-          "id",
-          editingProjectId
-        );
-
-      error = result.error;
-    } else {
-      const result = await supabase
-        .from("projects")
-        .insert({
-          ...payload,
-          is_active: true,
-        });
-
-      error = result.error;
-    }
+    const { error } = await supabase
+      .from("projects")
+      .insert({
+        name: projectForm.name.trim(),
+        location:
+          projectForm.location.trim() || null,
+        sector:
+          projectForm.sector.trim() || null,
+        description:
+          projectForm.description.trim() || null,
+        status:
+          projectForm.status.trim() || "Active",
+        image_url:
+          projectForm.image_url.trim() || null,
+        display_order: displayOrder,
+        is_active: true,
+      });
 
     if (error) {
       setMessage(
-        `Could not save project: ${error.message}`
+        `Could not add project: ${error.message}`
       );
       return;
     }
 
     setMessage(
-      editingProjectId
-        ? "Project updated successfully."
-        : "Project added successfully."
-    );
-
-    setEditingProjectId(null);
-    setProjectForm(
-      emptyProjectForm
-    );
-
-    await loadAll();
-  }
-
-  function startEditProject(
-    project: Project
-  ) {
-    setEditingProjectId(
-      project.id
+      "Project added successfully."
     );
 
     setProjectForm({
-      name: project.name || "",
-      location:
-        project.location || "",
-      sector:
-        project.sector || "",
-      description:
-        project.description || "",
-      status:
-        project.status || "Active",
-      image_url:
-        project.image_url || "",
-      display_order:
-        String(
-          project.display_order ?? 0
-        ),
+      name: "",
+      location: "",
+      sector: "",
+      description: "",
+      status: "Active",
+      image_url: "",
+      display_order: "0",
     });
-
-    setMessage("");
-  }
-
-  function cancelEditProject() {
-    setEditingProjectId(null);
-    setProjectForm(
-      emptyProjectForm
-    );
-    setMessage("");
-  }
-
-  /* =========================
-     PROJECT - ACTIVE / INACTIVE
-  ========================= */
-
-  async function toggleProject(
-    project: Project
-  ) {
-    setMessage("");
-
-    const { error } = await supabase
-      .from("projects")
-      .update({
-        is_active:
-          !project.is_active,
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq(
-        "id",
-        project.id
-      );
-
-    if (error) {
-      setMessage(
-        `Could not change project status: ${error.message}`
-      );
-      return;
-    }
-
-    setMessage(
-      project.is_active
-        ? "Project hidden from public website."
-        : "Project activated on public website."
-    );
 
     await loadAll();
   }
@@ -1058,26 +851,19 @@ export default function AdminPanel() {
      PROJECT - DELETE
   ========================= */
 
-  async function deleteProject(
-    id: string
-  ) {
-    const confirmed =
-      window.confirm(
-        "Delete this project permanently?"
-      );
+  async function deleteProject(id: string) {
+    const confirmed = window.confirm(
+      "Delete this project?"
+    );
 
     if (!confirmed) return;
 
     setMessage("");
 
-    const { error } =
-      await supabase
-        .from("projects")
-        .delete()
-        .eq(
-          "id",
-          id
-        );
+    const { error } = await supabase
+      .from("projects")
+      .delete()
+      .eq("id", id);
 
     if (error) {
       setMessage(
@@ -1090,20 +876,14 @@ export default function AdminPanel() {
       "Project deleted successfully."
     );
 
-    if (
-      editingProjectId === id
-    ) {
-      cancelEditProject();
-    }
-
     await loadAll();
   }
 
   /* =========================
-     MARKET - ADD / UPDATE
+     MARKET - ADD
   ========================= */
 
-  async function saveTicker(
+  async function addTicker(
     e: React.FormEvent<HTMLFormElement>
   ) {
     e.preventDefault();
@@ -1111,31 +891,22 @@ export default function AdminPanel() {
     setMessage("");
 
     if (!tickerForm.name.trim()) {
-      setMessage(
-        "Market name is required."
-      );
+      setMessage("Market name is required.");
       return;
     }
 
     if (!tickerForm.symbol.trim()) {
-      setMessage(
-        "Market symbol is required."
-      );
+      setMessage("Market symbol is required.");
       return;
     }
 
-    const price =
-      Number(tickerForm.price);
-
-    const changePercent =
-      Number(
-        tickerForm.change_percent
-      );
-
-    const displayOrder =
-      Number(
-        tickerForm.display_order
-      );
+    const price = Number(tickerForm.price);
+    const changePercent = Number(
+      tickerForm.change_percent
+    );
+    const displayOrder = Number(
+      tickerForm.display_order
+    );
 
     if (!Number.isFinite(price)) {
       setMessage(
@@ -1144,147 +915,200 @@ export default function AdminPanel() {
       return;
     }
 
-    if (
-      !Number.isFinite(
-        changePercent
-      )
-    ) {
+    if (!Number.isFinite(changePercent)) {
       setMessage(
         "Change percentage must be a valid number."
       );
       return;
     }
 
-    if (
-      !Number.isFinite(
-        displayOrder
-      )
-    ) {
+    if (!Number.isFinite(displayOrder)) {
       setMessage(
         "Display order must be a valid number."
       );
       return;
     }
 
-    const payload = {
-      name:
-        tickerForm.name.trim(),
-      symbol:
-        tickerForm.symbol.trim(),
-      price,
-      change_percent:
-        Math.abs(
+    const { error } = await supabase
+      .from("market_tickers")
+      .insert({
+        name: tickerForm.name.trim(),
+        symbol: tickerForm.symbol.trim(),
+        price,
+        change_percent: Math.abs(
           changePercent
         ),
-      direction:
-        tickerForm.direction,
-      display_order:
-        displayOrder,
-      updated_at:
-        new Date().toISOString(),
-    };
-
-    let error;
-
-    if (editingTickerId) {
-      const result = await supabase
-        .from("market_tickers")
-        .update(payload)
-        .eq(
-          "id",
-          editingTickerId
-        );
-
-      error = result.error;
-    } else {
-      const result = await supabase
-        .from("market_tickers")
-        .insert({
-          ...payload,
-          is_active: true,
-        });
-
-      error = result.error;
-    }
+        direction: tickerForm.direction,
+        display_order: displayOrder,
+        is_active: true,
+      });
 
     if (error) {
       setMessage(
-        `Could not save market ticker: ${error.message}`
+        `Could not add market ticker: ${error.message}`
       );
       return;
     }
 
     setMessage(
-      editingTickerId
-        ? "Market ticker updated successfully."
-        : "Market ticker added successfully."
+      "Market ticker added successfully."
     );
 
-    setEditingTickerId(null);
-    setTickerForm(
-      emptyTickerForm
-    );
+    setTickerForm({
+      name: "",
+      symbol: "",
+      price: "0",
+      change_percent: "0",
+      direction: "up",
+      display_order: "0",
+    });
 
     await loadAll();
   }
 
-  function startEditTicker(
-    ticker: Ticker
-  ) {
-    setEditingTickerId(
-      ticker.id
-    );
+  /* =========================
+     MARKET - START EDIT
+  ========================= */
+
+  function startEditTicker(ticker: Ticker) {
+    setEditingTickerId(ticker.id);
 
     setTickerForm({
       name: ticker.name,
       symbol: ticker.symbol,
-      price: String(
-        ticker.price
-      ),
+      price: String(ticker.price),
       change_percent: String(
-        Math.abs(
-          ticker.change_percent
-        )
+        Math.abs(ticker.change_percent)
       ),
-      direction:
-        ticker.direction,
-      display_order:
-        String(
-          ticker.display_order
-        ),
+      direction: ticker.direction,
+      display_order: String(
+        ticker.display_order
+      ),
     });
 
     setMessage("");
   }
 
+  /* =========================
+     MARKET - CANCEL EDIT
+  ========================= */
+
   function cancelEditTicker() {
     setEditingTickerId(null);
-    setTickerForm(
-      emptyTickerForm
-    );
+
+    setTickerForm({
+      name: "",
+      symbol: "",
+      price: "0",
+      change_percent: "0",
+      direction: "up",
+      display_order: "0",
+    });
+
     setMessage("");
   }
 
-  async function deleteTicker(
-    id: string
+  /* =========================
+     MARKET - UPDATE
+  ========================= */
+
+  async function updateTicker(
+    e: React.FormEvent<HTMLFormElement>
   ) {
-    const confirmed =
-      window.confirm(
-        "Delete this market ticker?"
+    e.preventDefault();
+
+    if (!editingTickerId) return;
+
+    setMessage("");
+
+    if (!tickerForm.name.trim()) {
+      setMessage("Market name is required.");
+      return;
+    }
+
+    if (!tickerForm.symbol.trim()) {
+      setMessage("Market symbol is required.");
+      return;
+    }
+
+    const price = Number(tickerForm.price);
+    const changePercent = Number(
+      tickerForm.change_percent
+    );
+    const displayOrder = Number(
+      tickerForm.display_order
+    );
+
+    if (!Number.isFinite(price)) {
+      setMessage(
+        "Price must be a valid number."
       );
+      return;
+    }
+
+    if (!Number.isFinite(changePercent)) {
+      setMessage(
+        "Change percentage must be a valid number."
+      );
+      return;
+    }
+
+    if (!Number.isFinite(displayOrder)) {
+      setMessage(
+        "Display order must be a valid number."
+      );
+      return;
+    }
+
+    const { error } = await supabase
+      .from("market_tickers")
+      .update({
+        name: tickerForm.name.trim(),
+        symbol: tickerForm.symbol.trim(),
+        price,
+        change_percent: Math.abs(
+          changePercent
+        ),
+        direction: tickerForm.direction,
+        display_order: displayOrder,
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq("id", editingTickerId);
+
+    if (error) {
+      setMessage(
+        `Could not update market ticker: ${error.message}`
+      );
+      return;
+    }
+
+    setMessage(
+      "Market ticker updated successfully."
+    );
+
+    cancelEditTicker();
+
+    await loadAll();
+  }
+
+  /* =========================
+     MARKET - DELETE
+  ========================= */
+
+  async function deleteTicker(id: string) {
+    const confirmed = window.confirm(
+      "Delete this market ticker?"
+    );
 
     if (!confirmed) return;
 
     setMessage("");
 
-    const { error } =
-      await supabase
-        .from("market_tickers")
-        .delete()
-        .eq(
-          "id",
-          id
-        );
+    const { error } = await supabase
+      .from("market_tickers")
+      .delete()
+      .eq("id", id);
 
     if (error) {
       setMessage(
@@ -1297,33 +1121,28 @@ export default function AdminPanel() {
       "Market ticker deleted successfully."
     );
 
-    if (
-      editingTickerId === id
-    ) {
+    if (editingTickerId === id) {
       cancelEditTicker();
     }
 
     await loadAll();
   }
 
-  async function toggleTicker(
-    ticker: Ticker
-  ) {
+  /* =========================
+     MARKET - ACTIVE / HIDE
+  ========================= */
+
+  async function toggleTicker(ticker: Ticker) {
     setMessage("");
 
-    const { error } =
-      await supabase
-        .from("market_tickers")
-        .update({
-          is_active:
-            !ticker.is_active,
-          updated_at:
-            new Date().toISOString(),
-        })
-        .eq(
-          "id",
-          ticker.id
-        );
+    const { error } = await supabase
+      .from("market_tickers")
+      .update({
+        is_active: !ticker.is_active,
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq("id", ticker.id);
 
     if (error) {
       setMessage(
@@ -1375,33 +1194,29 @@ export default function AdminPanel() {
       return;
     }
 
-    const { error } =
-      await supabase
-        .from("site_settings")
-        .update({
-          site_name:
-            siteForm.site_name.trim(),
-          tagline:
-            siteForm.tagline.trim(),
-          about_text:
-            siteForm.about_text,
-          mission_text:
-            siteForm.mission_text,
-          vision_text:
-            siteForm.vision_text,
-          location:
-            siteForm.location,
-          phone:
-            siteForm.phone,
-          email:
-            siteForm.email,
-          updated_at:
-            new Date().toISOString(),
-        })
-        .eq(
-          "id",
-          existing.id
-        );
+    const { error } = await supabase
+      .from("site_settings")
+      .update({
+        site_name:
+          siteForm.site_name.trim(),
+        tagline:
+          siteForm.tagline.trim(),
+        about_text:
+          siteForm.about_text,
+        mission_text:
+          siteForm.mission_text,
+        vision_text:
+          siteForm.vision_text,
+        location:
+          siteForm.location,
+        phone:
+          siteForm.phone,
+        email:
+          siteForm.email,
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq("id", existing.id);
 
     if (error) {
       setMessage(
@@ -1422,16 +1237,8 @@ export default function AdminPanel() {
   ========================= */
 
   async function logout() {
-    await fetch(
-      "/api/admin/logout",
-      {
-        method: "POST",
-      }
-    );
-
-    await supabase.auth.signOut({
-      scope: "local",
-    });
+    await fetch("/api/admin/logout", { method: "POST" });
+    await supabase.auth.signOut({ scope: "local" });
 
     window.location.replace(
       "/admin/login"
@@ -1440,10 +1247,12 @@ export default function AdminPanel() {
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950">
+
       {/* HEADER */}
 
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
+
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.25em] text-purple-900">
               NIRVIK
@@ -1461,13 +1270,16 @@ export default function AdminPanel() {
           >
             Logout
           </button>
+
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-6 py-8">
+
         {/* TABS */}
 
         <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+
           {[
             ["overview", "Overview"],
             ["investors", "Investors"],
@@ -1484,9 +1296,7 @@ export default function AdminPanel() {
               type="button"
               key={key}
               onClick={() =>
-                setTab(
-                  key as typeof tab
-                )
+                setTab(key as typeof tab)
               }
               className={
                 tab === key
@@ -1497,6 +1307,7 @@ export default function AdminPanel() {
               {label}
             </button>
           ))}
+
         </div>
 
         {/* MESSAGE */}
@@ -1511,60 +1322,43 @@ export default function AdminPanel() {
 
         {tab === "overview" && (
           <section className="mt-8">
+
             <h2 className="text-3xl font-black text-blue-950">
               Dashboard Overview
             </h2>
 
             <div className="mt-8 grid gap-5 md:grid-cols-3">
-              <Stat
-                label="Investors"
-                value={
-                  investors.length
-                }
-              />
 
               <Stat
-                label="Active Investors"
-                value={
-                  investors.filter(
-                    (item) =>
-                      item.is_active
-                  ).length
-                }
+                label="Investors"
+                value={investors.length}
               />
 
               <Stat
                 label="Projects"
-                value={
-                  projects.filter(
-                    (item) =>
-                      item.is_active
-                  ).length
-                }
+                value={projects.length}
               />
 
               <Stat
                 label="Market Items"
-                value={
-                  tickers.filter(
-                    (item) =>
-                      item.is_active
-                  ).length
-                }
+                value={tickers.length}
               />
+
             </div>
 
             <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-8">
+
               <h3 className="text-xl font-black text-blue-950">
                 NIRVIK Administration
               </h3>
 
               <p className="mt-3 max-w-2xl leading-8 text-slate-600">
-                এখান থেকে investor, project, market,
-                website content এবং investment history
-                পরিচালনা করা যাবে।
+                এখান থেকে investor, project, market এবং
+                website content পরিচালনা করা যাবে।
               </p>
+
             </div>
+
           </section>
         )}
 
@@ -1572,17 +1366,18 @@ export default function AdminPanel() {
 
         {tab === "investors" && (
           <section className="mt-8 space-y-8">
+
             <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+
               <h2 className="text-2xl font-black text-blue-950">
                 Add Investor
               </h2>
 
               <form
-                onSubmit={
-                  addInvestor
-                }
+                onSubmit={addInvestor}
                 className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4"
               >
+
                 <Input
                   label="Serial"
                   value={
@@ -1598,9 +1393,7 @@ export default function AdminPanel() {
 
                 <Input
                   label="Name"
-                  value={
-                    investorForm.name
-                  }
+                  value={investorForm.name}
                   onChange={(v) =>
                     setInvestorForm({
                       ...investorForm,
@@ -1611,9 +1404,7 @@ export default function AdminPanel() {
 
                 <Input
                   label="NID"
-                  value={
-                    investorForm.nid
-                  }
+                  value={investorForm.nid}
                   onChange={(v) =>
                     setInvestorForm({
                       ...investorForm,
@@ -1637,9 +1428,7 @@ export default function AdminPanel() {
 
                 <Input
                   label="Email"
-                  value={
-                    investorForm.email
-                  }
+                  value={investorForm.email}
                   onChange={(v) =>
                     setInvestorForm({
                       ...investorForm,
@@ -1663,9 +1452,7 @@ export default function AdminPanel() {
 
                 <Input
                   label="Phone"
-                  value={
-                    investorForm.phone
-                  }
+                  value={investorForm.phone}
                   onChange={(v) =>
                     setInvestorForm({
                       ...investorForm,
@@ -1676,9 +1463,7 @@ export default function AdminPanel() {
 
                 <Input
                   label="Address"
-                  value={
-                    investorForm.address
-                  }
+                  value={investorForm.address}
                   onChange={(v) =>
                     setInvestorForm({
                       ...investorForm,
@@ -1701,7 +1486,7 @@ export default function AdminPanel() {
                 />
 
                 <Input
-                  label="Total Return"
+                  label="Total Amount Receivable"
                   value={
                     investorForm.total_return
                   }
@@ -1714,7 +1499,7 @@ export default function AdminPanel() {
                 />
 
                 <Input
-                  label="Total Returned"
+                  label="Total Amount Returned"
                   value={
                     investorForm.total_returned
                   }
@@ -1727,7 +1512,7 @@ export default function AdminPanel() {
                 />
 
                 <Input
-                  label="Due"
+                  label="Outstanding Amount"
                   value={
                     investorForm.due_amount
                   }
@@ -1740,10 +1525,8 @@ export default function AdminPanel() {
                 />
 
                 <Input
-                  label="Profit"
-                  value={
-                    investorForm.profit
-                  }
+                  label="Total Profit"
+                  value={investorForm.profit}
                   onChange={(v) =>
                     setInvestorForm({
                       ...investorForm,
@@ -1753,17 +1536,19 @@ export default function AdminPanel() {
                 />
 
                 <div className="md:col-span-2 lg:col-span-4">
+
                   <button
                     type="submit"
                     className="rounded-xl bg-blue-950 px-7 py-3 font-bold text-white hover:bg-purple-950"
                   >
                     Add Investor
                   </button>
-                </div>
-              </form>
-            </div>
 
-            {/* EDIT INVESTOR */}
+                </div>
+
+              </form>
+
+            </div>
 
             {editingInvestorId && (
               <div className="rounded-2xl border border-blue-200 bg-blue-50 p-7 shadow-sm">
@@ -1772,7 +1557,6 @@ export default function AdminPanel() {
                     <p className="text-xs font-bold uppercase tracking-[0.2em] text-purple-900">
                       Investor Management
                     </p>
-
                     <h2 className="mt-1 text-2xl font-black text-blue-950">
                       Edit Investor
                     </h2>
@@ -1780,9 +1564,7 @@ export default function AdminPanel() {
 
                   <button
                     type="button"
-                    onClick={
-                      cancelEditInvestor
-                    }
+                    onClick={cancelEditInvestor}
                     className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 hover:bg-slate-100"
                   >
                     Cancel Edit
@@ -1790,168 +1572,23 @@ export default function AdminPanel() {
                 </div>
 
                 <form
-                  onSubmit={
-                    updateInvestor
-                  }
+                  onSubmit={updateInvestor}
                   className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4"
                 >
-                  <Input
-                    label="Serial"
-                    value={
-                      investorForm.serial_number
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        serial_number: v,
-                      })
-                    }
-                  />
+                  <Input label="Serial" value={investorForm.serial_number} onChange={(v) => setInvestorForm({ ...investorForm, serial_number: v })} />
+                  <Input label="Name" value={investorForm.name} onChange={(v) => setInvestorForm({ ...investorForm, name: v })} />
+                  <Input label="NID" value={investorForm.nid} onChange={(v) => setInvestorForm({ ...investorForm, nid: v })} />
+                  <Input label="Username" value={investorForm.username} onChange={(v) => setInvestorForm({ ...investorForm, username: v })} />
+                  <Input label="Email" value={investorForm.email} onChange={(v) => setInvestorForm({ ...investorForm, email: v })} />
+                  <Input label="Phone" value={investorForm.phone} onChange={(v) => setInvestorForm({ ...investorForm, phone: v })} />
+                  <Input label="Address" value={investorForm.address} onChange={(v) => setInvestorForm({ ...investorForm, address: v })} />
+                  <Input label="Total Investment" value={investorForm.total_investment} onChange={(v) => setInvestorForm({ ...investorForm, total_investment: v })} />
+                  <Input label="Total Amount Receivable" value={investorForm.total_return} onChange={(v) => setInvestorForm({ ...investorForm, total_return: v })} />
+                  <Input label="Total Amount Returned" value={investorForm.total_returned} onChange={(v) => setInvestorForm({ ...investorForm, total_returned: v })} />
+                  <Input label="Outstanding Amount" value={investorForm.due_amount} onChange={(v) => setInvestorForm({ ...investorForm, due_amount: v })} />
+                  <Input label="Total Profit" value={investorForm.profit} onChange={(v) => setInvestorForm({ ...investorForm, profit: v })} />
 
-                  <Input
-                    label="Name"
-                    value={
-                      investorForm.name
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        name: v,
-                      })
-                    }
-                  />
-
-                  <Input
-                    label="NID"
-                    value={
-                      investorForm.nid
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        nid: v,
-                      })
-                    }
-                  />
-
-                  <Input
-                    label="Username"
-                    value={
-                      investorForm.username
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        username: v,
-                      })
-                    }
-                  />
-
-                  <Input
-                    label="Email"
-                    value={
-                      investorForm.email
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        email: v,
-                      })
-                    }
-                  />
-
-                  <Input
-                    label="Phone"
-                    value={
-                      investorForm.phone
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        phone: v,
-                      })
-                    }
-                  />
-
-                  <Input
-                    label="Address"
-                    value={
-                      investorForm.address
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        address: v,
-                      })
-                    }
-                  />
-
-                  <Input
-                    label="Total Investment"
-                    value={
-                      investorForm.total_investment
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        total_investment: v,
-                      })
-                    }
-                  />
-
-                  <Input
-                    label="Total Return"
-                    value={
-                      investorForm.total_return
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        total_return: v,
-                      })
-                    }
-                  />
-
-                  <Input
-                    label="Total Returned"
-                    value={
-                      investorForm.total_returned
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        total_returned: v,
-                      })
-                    }
-                  />
-
-                  <Input
-                    label="Due"
-                    value={
-                      investorForm.due_amount
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        due_amount: v,
-                      })
-                    }
-                  />
-
-                  <Input
-                    label="Profit"
-                    value={
-                      investorForm.profit
-                    }
-                    onChange={(v) =>
-                      setInvestorForm({
-                        ...investorForm,
-                        profit: v,
-                      })
-                    }
-                  />
-
-                  <div className="md:col-span-2 lg:col-span-4">
+                  <div className="flex items-end md:col-span-2 lg:col-span-4">
                     <button
                       type="submit"
                       className="rounded-xl bg-blue-950 px-7 py-3 font-bold text-white hover:bg-purple-950"
@@ -1963,8 +1600,6 @@ export default function AdminPanel() {
               </div>
             )}
 
-            {/* SELECTED INVESTOR */}
-
             {selectedInvestor && (
               <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
                 <div className="flex items-center justify-between gap-4">
@@ -1972,21 +1607,13 @@ export default function AdminPanel() {
                     <p className="text-xs font-bold uppercase tracking-[0.2em] text-purple-900">
                       Investor Panel
                     </p>
-
                     <h2 className="mt-1 text-2xl font-black text-blue-950">
-                      {
-                        selectedInvestor.name
-                      }
+                      {selectedInvestor.name}
                     </h2>
                   </div>
-
                   <button
                     type="button"
-                    onClick={() =>
-                      setSelectedInvestor(
-                        null
-                      )
-                    }
+                    onClick={() => setSelectedInvestor(null)}
                     className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-bold text-slate-700 hover:bg-slate-100"
                   >
                     Close
@@ -1995,113 +1622,44 @@ export default function AdminPanel() {
 
                 <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   {[
-                    [
-                      "Serial",
-                      selectedInvestor.serial_number,
-                    ],
-                    [
-                      "NID",
-                      selectedInvestor.nid ||
-                        "—",
-                    ],
-                    [
-                      "Email",
-                      selectedInvestor.email ||
-                        "—",
-                    ],
-                    [
-                      "Username",
-                      selectedInvestor.username ||
-                        "—",
-                    ],
-                    [
-                      "Phone",
-                      selectedInvestor.phone ||
-                        "—",
-                    ],
-                    [
-                      "Address",
-                      selectedInvestor.address ||
-                        "—",
-                    ],
-                    [
-                      "Total Investment",
-                      `৳${Number(
-                        selectedInvestor.total_investment
-                      ).toLocaleString()}`,
-                    ],
-                    [
-                      "Total Return",
-                      `৳${Number(
-                        selectedInvestor.total_return
-                      ).toLocaleString()}`,
-                    ],
-                    [
-                      "Total Returned",
-                      `৳${Number(
-                        selectedInvestor.total_returned
-                      ).toLocaleString()}`,
-                    ],
-                    [
-                      "Due",
-                      `৳${Number(
-                        selectedInvestor.due_amount
-                      ).toLocaleString()}`,
-                    ],
-                    [
-                      "Profit",
-                      `৳${Number(
-                        selectedInvestor.profit
-                      ).toLocaleString()}`,
-                    ],
-                    [
-                      "Status",
-                      selectedInvestor.is_active
-                        ? "Active"
-                        : "Inactive",
-                    ],
-                  ].map(
-                    ([label, value]) => (
-                      <div
-                        key={String(
-                          label
-                        )}
-                        className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-                      >
-                        <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                          {label}
-                        </p>
-
-                        <p className="mt-2 break-words font-bold text-slate-800">
-                          {value}
-                        </p>
-                      </div>
-                    )
-                  )}
+                    ["Serial", selectedInvestor.serial_number],
+                    ["NID", selectedInvestor.nid || "—"],
+                    ["Email", selectedInvestor.email || "—"],
+                    ["Username", selectedInvestor.username || "—"],
+                    ["Phone", selectedInvestor.phone || "—"],
+                    ["Address", selectedInvestor.address || "—"],
+                    ["Total Investment", `৳${Number(selectedInvestor.total_investment).toLocaleString()}`],
+                    ["Total Amount Receivable", `৳${Number(selectedInvestor.total_return).toLocaleString()}`],
+                    ["Total Amount Returned", `৳${Number(selectedInvestor.total_returned).toLocaleString()}`],
+                    ["Outstanding Amount", `৳${Number(selectedInvestor.due_amount).toLocaleString()}`],
+                    ["Total Profit", `৳${Number(selectedInvestor.profit).toLocaleString()}`],
+                    ["Status", selectedInvestor.is_active ? "Active" : "Inactive"],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{label}</p>
+                      <p className="mt-2 break-words font-bold text-slate-800">{value}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* INVESTOR LIST */}
-
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
               <div className="p-6">
+
                 <h2 className="text-2xl font-black text-blue-950">
                   Investor List
                 </h2>
 
-                <p className="mt-1 text-sm text-slate-500">
-                  {investors.length} investor account
-                  {investors.length !== 1
-                    ? "s"
-                    : ""}{" "}
-                  found.
-                </p>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1250px] text-left text-sm">
+
+                <table className="w-full min-w-[1100px] text-left text-sm">
+
                   <thead className="bg-slate-50">
+
                     <tr>
                       <th className="px-5 py-4">
                         SL
@@ -2116,37 +1674,34 @@ export default function AdminPanel() {
                       </th>
 
                       <th className="px-5 py-4">
-                        Investment
+                        Total Investment
                       </th>
 
                       <th className="px-5 py-4">
-                        Return
+                        Total Amount Receivable
                       </th>
 
                       <th className="px-5 py-4">
-                        Due
+                        Outstanding Amount
                       </th>
 
                       <th className="px-5 py-4">
-                        Profit
-                      </th>
-
-                      <th className="px-5 py-4">
-                        Status
+                        Total Profit
                       </th>
 
                       <th className="px-5 py-4">
                         Action
                       </th>
                     </tr>
+
                   </thead>
 
                   <tbody>
-                    {investors.length ===
-                    0 ? (
+
+                    {investors.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={9}
+                          colSpan={8}
                           className="px-5 py-10 text-center text-slate-500"
                         >
                           No investors found.
@@ -2156,11 +1711,10 @@ export default function AdminPanel() {
                       investors.map(
                         (investor) => (
                           <tr
-                            key={
-                              investor.id
-                            }
+                            key={investor.id}
                             className="border-t border-slate-200"
                           >
+
                             <td className="px-5 py-4">
                               {
                                 investor.serial_number
@@ -2168,16 +1722,12 @@ export default function AdminPanel() {
                             </td>
 
                             <td className="px-5 py-4 font-bold">
-                              {
-                                investor.name
-                              }
+                              {investor.name}
                             </td>
 
                             <td className="px-5 py-4">
-                              {
-                                investor.username ||
-                                "—"
-                              }
+                              {investor.username ||
+                                "—"}
                             </td>
 
                             <td className="px-5 py-4">
@@ -2209,40 +1759,18 @@ export default function AdminPanel() {
                             </td>
 
                             <td className="px-5 py-4">
-                              <span
-                                className={
-                                  investor.is_active
-                                    ? "rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700"
-                                    : "rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-600"
-                                }
-                              >
-                                {investor.is_active
-                                  ? "Active"
-                                  : "Inactive"}
-                              </span>
-                            </td>
-
-                            <td className="px-5 py-4">
                               <div className="flex flex-wrap gap-2">
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    viewInvestor(
-                                      investor
-                                    )
-                                  }
-                                  className="rounded-lg border border-slate-300 px-3 py-2 font-semibold hover:bg-slate-50"
+                                  onClick={() => viewInvestor(investor)}
+                                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-700 hover:bg-slate-50"
                                 >
                                   View
                                 </button>
 
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    startEditInvestor(
-                                      investor
-                                    )
-                                  }
+                                  onClick={() => startEditInvestor(investor)}
                                   className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 font-semibold text-blue-900 hover:bg-blue-100"
                                 >
                                   Edit
@@ -2250,43 +1778,27 @@ export default function AdminPanel() {
 
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    toggleInvestor(
-                                      investor
-                                    )
-                                  }
-                                  className={
-                                    investor.is_active
-                                      ? "rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 font-semibold text-amber-700 hover:bg-amber-100"
-                                      : "rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 font-semibold text-emerald-700 hover:bg-emerald-100"
-                                  }
-                                >
-                                  {investor.is_active
-                                    ? "Deactivate"
-                                    : "Activate"}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    deleteInvestor(
-                                      investor.id
-                                    )
-                                  }
+                                  onClick={() => deleteInvestor(investor.id)}
                                   className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-semibold text-red-600 hover:bg-red-100"
                                 >
                                   Delete
                                 </button>
                               </div>
                             </td>
+
                           </tr>
                         )
                       )
                     )}
+
                   </tbody>
+
                 </table>
+
               </div>
+
             </div>
+
           </section>
         )}
 
@@ -2294,44 +1806,21 @@ export default function AdminPanel() {
 
         {tab === "projects" && (
           <section className="mt-8 space-y-8">
-            <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
-              <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-purple-900">
-                    Project Management
-                  </p>
 
-                  <h2 className="mt-1 text-2xl font-black text-blue-950">
-                    {editingProjectId
-                      ? "Edit Project"
-                      : "Add Project"}
-                  </h2>
-                </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-7">
 
-                {editingProjectId && (
-                  <button
-                    type="button"
-                    onClick={
-                      cancelEditProject
-                    }
-                    className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-bold hover:bg-slate-100"
-                  >
-                    Cancel Edit
-                  </button>
-                )}
-              </div>
+              <h2 className="text-2xl font-black text-blue-950">
+                Add Project
+              </h2>
 
               <form
-                onSubmit={
-                  saveProject
-                }
+                onSubmit={addProject}
                 className="mt-6 grid gap-4 md:grid-cols-2"
               >
+
                 <Input
                   label="Project Name"
-                  value={
-                    projectForm.name
-                  }
+                  value={projectForm.name}
                   onChange={(v) =>
                     setProjectForm({
                       ...projectForm,
@@ -2355,9 +1844,7 @@ export default function AdminPanel() {
 
                 <Input
                   label="Sector"
-                  value={
-                    projectForm.sector
-                  }
+                  value={projectForm.sector}
                   onChange={(v) =>
                     setProjectForm({
                       ...projectForm,
@@ -2368,9 +1855,7 @@ export default function AdminPanel() {
 
                 <Input
                   label="Status"
-                  value={
-                    projectForm.status
-                  }
+                  value={projectForm.status}
                   onChange={(v) =>
                     setProjectForm({
                       ...projectForm,
@@ -2406,164 +1891,114 @@ export default function AdminPanel() {
                 />
 
                 <div className="md:col-span-2">
-                  <TextArea
-                    label="Description"
+
+                  <label className="text-sm font-semibold text-slate-700">
+                    Description
+                  </label>
+
+                  <textarea
                     value={
                       projectForm.description
                     }
-                    onChange={(v) =>
+                    onChange={(e) =>
                       setProjectForm({
                         ...projectForm,
-                        description: v,
+                        description:
+                          e.target.value,
                       })
                     }
+                    rows={5}
+                    className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-950"
                   />
+
                 </div>
 
-                <div className="md:col-span-2">
-                  <button
-                    type="submit"
-                    className="rounded-xl bg-blue-950 px-7 py-3 font-bold text-white hover:bg-purple-950"
-                  >
-                    {editingProjectId
-                      ? "Save Project Changes"
-                      : "Add Project"}
-                  </button>
-                </div>
+                <button
+                  type="submit"
+                  className="w-fit rounded-xl bg-blue-950 px-7 py-3 font-bold text-white hover:bg-purple-950"
+                >
+                  Add Project
+                </button>
+
               </form>
+
             </div>
 
             <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-              {projects.length ===
-              0 ? (
+
+              {projects.length === 0 ? (
                 <div className="rounded-2xl border border-slate-200 bg-white p-8 text-slate-500 md:col-span-2 lg:col-span-3">
                   No projects found.
                 </div>
               ) : (
-                projects.map(
-                  (project) => (
-                    <div
-                      key={
-                        project.id
+                projects.map((project) => (
+                  <div
+                    key={project.id}
+                    className="rounded-2xl border border-slate-200 bg-white p-6"
+                  >
+
+                    {project.image_url && (
+                      <img
+                        src={project.image_url}
+                        alt={project.name}
+                        className="mb-5 h-48 w-full rounded-xl object-cover"
+                      />
+                    )}
+
+                    <p className="text-xs font-bold uppercase tracking-wider text-purple-900">
+                      {project.status}
+                    </p>
+
+                    <h3 className="mt-2 text-xl font-black text-blue-950">
+                      {project.name}
+                    </h3>
+
+                    <p className="mt-2 text-sm text-slate-500">
+                      {project.location ||
+                        "—"}
+                    </p>
+
+                    <p className="mt-1 text-sm font-semibold text-slate-500">
+                      {project.sector || "—"}
+                    </p>
+
+                    <p className="mt-4 text-sm leading-7 text-slate-600">
+                      {project.description ||
+                        "No description."}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        deleteProject(
+                          project.id
+                        )
                       }
-                      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+                      className="mt-5 rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
                     >
-                      {project.image_url && (
-                        <img
-                          src={
-                            project.image_url
-                          }
-                          alt={
-                            project.name
-                          }
-                          className="mb-5 h-48 w-full rounded-xl object-cover"
-                        />
-                      )}
+                      Delete
+                    </button>
 
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs font-bold uppercase tracking-wider text-purple-900">
-                          {
-                            project.status
-                          }
-                        </p>
-
-                        <span
-                          className={
-                            project.is_active
-                              ? "rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700"
-                              : "rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-600"
-                          }
-                        >
-                          {project.is_active
-                            ? "Visible"
-                            : "Hidden"}
-                        </span>
-                      </div>
-
-                      <h3 className="mt-2 text-xl font-black text-blue-950">
-                        {
-                          project.name
-                        }
-                      </h3>
-
-                      <p className="mt-2 text-sm text-slate-500">
-                        📍{" "}
-                        {project.location ||
-                          "—"}
-                      </p>
-
-                      <p className="mt-1 text-sm font-semibold text-slate-500">
-                        {
-                          project.sector ||
-                          "—"
-                        }
-                      </p>
-
-                      <p className="mt-4 line-clamp-4 text-sm leading-7 text-slate-600">
-                        {
-                          project.description ||
-                          "No description."
-                        }
-                      </p>
-
-                      <div className="mt-5 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            startEditProject(
-                              project
-                            )
-                          }
-                          className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-900 hover:bg-blue-100"
-                        >
-                          Edit
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            toggleProject(
-                              project
-                            )
-                          }
-                          className={
-                            project.is_active
-                              ? "rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100"
-                              : "rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
-                          }
-                        >
-                          {project.is_active
-                            ? "Hide"
-                            : "Activate"}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            deleteProject(
-                              project.id
-                            )
-                          }
-                          className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  )
-                )
+                  </div>
+                ))
               )}
+
             </div>
+
           </section>
         )}
 
-        {/* MARKET */}
+        {/* MARKET LIVE */}
 
         {tab === "market" && (
           <section className="mt-8 space-y-8">
+
             <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+
               <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+
                 <div>
+
                   <p className="text-xs font-bold uppercase tracking-[0.2em] text-purple-900">
                     Market Management
                   </p>
@@ -2573,6 +2008,7 @@ export default function AdminPanel() {
                       ? "Edit Market Item"
                       : "Add Market Item"}
                   </h2>
+
                 </div>
 
                 {editingTickerId && (
@@ -2581,24 +2017,26 @@ export default function AdminPanel() {
                     onClick={
                       cancelEditTicker
                     }
-                    className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-bold hover:bg-slate-100"
+                    className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-bold text-slate-700 hover:bg-slate-100"
                   >
                     Cancel Edit
                   </button>
                 )}
+
               </div>
 
               <form
                 onSubmit={
-                  saveTicker
+                  editingTickerId
+                    ? updateTicker
+                    : addTicker
                 }
                 className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-6"
               >
+
                 <Input
                   label="Name"
-                  value={
-                    tickerForm.name
-                  }
+                  value={tickerForm.name}
                   onChange={(v) =>
                     setTickerForm({
                       ...tickerForm,
@@ -2609,9 +2047,7 @@ export default function AdminPanel() {
 
                 <Input
                   label="Symbol"
-                  value={
-                    tickerForm.symbol
-                  }
+                  value={tickerForm.symbol}
                   onChange={(v) =>
                     setTickerForm({
                       ...tickerForm,
@@ -2622,9 +2058,7 @@ export default function AdminPanel() {
 
                 <Input
                   label="Price"
-                  value={
-                    tickerForm.price
-                  }
+                  value={tickerForm.price}
                   onChange={(v) =>
                     setTickerForm({
                       ...tickerForm,
@@ -2660,6 +2094,7 @@ export default function AdminPanel() {
                 />
 
                 <div>
+
                   <label className="text-sm font-semibold text-slate-700">
                     Direction
                   </label>
@@ -2679,6 +2114,7 @@ export default function AdminPanel() {
                     }
                     className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-950"
                   >
+
                     <option value="up">
                       Up
                     </option>
@@ -2686,10 +2122,13 @@ export default function AdminPanel() {
                     <option value="down">
                       Down
                     </option>
+
                   </select>
+
                 </div>
 
                 <div className="md:col-span-2 lg:col-span-6">
+
                   <button
                     type="submit"
                     className="rounded-xl bg-blue-950 px-7 py-3 font-bold text-white hover:bg-purple-950"
@@ -2698,178 +2137,195 @@ export default function AdminPanel() {
                       ? "Save Market Changes"
                       : "Add Market Item"}
                   </button>
+
                 </div>
+
               </form>
+
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
               <div className="border-b border-slate-200 p-6">
+
                 <h2 className="text-2xl font-black text-blue-950">
                   Live Market Items
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  Public website-এর Market Live
-                  information এখান থেকে নিয়ন্ত্রণ করা যাবে।
+                  এখান থেকে public website-এর Market
+                  Live information নিয়ন্ত্রণ করা যাবে।
                 </p>
+
               </div>
 
               <div className="divide-y divide-slate-100">
-                {tickers.length ===
-                0 ? (
+
+                {tickers.length === 0 ? (
                   <div className="p-10 text-center text-slate-500">
-                    No market items found.
+                    কোনো Market Item এখনো যোগ করা হয়নি।
                   </div>
                 ) : (
-                  tickers.map(
-                    (ticker) => (
-                      <div
-                        key={
-                          ticker.id
-                        }
-                        className="p-5"
-                      >
-                        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="flex items-center gap-4">
-                            <div
+                  tickers.map((ticker) => (
+                    <div
+                      key={ticker.id}
+                      className="p-5"
+                    >
+
+                      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+
+                        <div className="flex items-center gap-4">
+
+                          <div
+                            className={
+                              ticker.direction ===
+                              "up"
+                                ? "flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-xl font-black text-emerald-600"
+                                : "flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-xl font-black text-red-600"
+                            }
+                          >
+                            {ticker.direction ===
+                            "up"
+                              ? "↑"
+                              : "↓"}
+                          </div>
+
+                          <div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+
+                              <p className="font-black text-slate-900">
+                                {ticker.name}
+                              </p>
+
+                              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
+                                {ticker.symbol}
+                              </span>
+
+                              {!ticker.is_active && (
+                                <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-600">
+                                  Hidden
+                                </span>
+                              )}
+
+                            </div>
+
+                            <p className="mt-1 text-xs text-slate-400">
+                              Display order:{" "}
+                              {
+                                ticker.display_order
+                              }
+                            </p>
+
+                          </div>
+
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+
+                          <div className="rounded-xl bg-slate-50 px-4 py-3 text-center">
+
+                            <p className="text-xs font-semibold text-slate-400">
+                              Price
+                            </p>
+
+                            <p className="mt-1 font-black text-slate-900">
+                              {Number(
+                                ticker.price
+                              ).toLocaleString()}
+                            </p>
+
+                          </div>
+
+                          <div
+                            className={
+                              ticker.direction ===
+                              "up"
+                                ? "rounded-xl bg-emerald-50 px-4 py-3 text-center"
+                                : "rounded-xl bg-red-50 px-4 py-3 text-center"
+                            }
+                          >
+
+                            <p className="text-xs font-semibold text-slate-400">
+                              Change
+                            </p>
+
+                            <p
                               className={
                                 ticker.direction ===
                                 "up"
-                                  ? "flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-xl font-black text-emerald-600"
-                                  : "flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-xl font-black text-red-600"
+                                  ? "mt-1 font-black text-emerald-600"
+                                  : "mt-1 font-black text-red-600"
                               }
                             >
                               {ticker.direction ===
                               "up"
-                                ? "↑"
-                                : "↓"}
-                            </div>
+                                ? "+"
+                                : "-"}
+                              {Math.abs(
+                                Number(
+                                  ticker.change_percent
+                                )
+                              )}
+                              %
+                            </p>
 
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-black text-slate-900">
-                                  {
-                                    ticker.name
-                                  }
-                                </p>
-
-                                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
-                                  {
-                                    ticker.symbol
-                                  }
-                                </span>
-
-                                {!ticker.is_active && (
-                                  <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-600">
-                                    Hidden
-                                  </span>
-                                )}
-                              </div>
-
-                              <p className="mt-1 text-xs text-slate-400">
-                                Display order:{" "}
-                                {
-                                  ticker.display_order
-                                }
-                              </p>
-                            </div>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-3">
-                            <div className="rounded-xl bg-slate-50 px-4 py-3 text-center">
-                              <p className="text-xs font-semibold text-slate-400">
-                                Price
-                              </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              startEditTicker(
+                                ticker
+                              )
+                            }
+                            className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-900 hover:bg-blue-100"
+                          >
+                            Edit
+                          </button>
 
-                              <p className="mt-1 font-black text-slate-900">
-                                {Number(
-                                  ticker.price
-                                ).toLocaleString()}
-                              </p>
-                            </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleTicker(
+                                ticker
+                              )
+                            }
+                            className={
+                              ticker.is_active
+                                ? "rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700 hover:bg-amber-100"
+                                : "rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 hover:bg-emerald-100"
+                            }
+                          >
+                            {ticker.is_active
+                              ? "Hide"
+                              : "Activate"}
+                          </button>
 
-                            <div
-                              className={
-                                ticker.direction ===
-                                "up"
-                                  ? "rounded-xl bg-emerald-50 px-4 py-3 text-center"
-                                  : "rounded-xl bg-red-50 px-4 py-3 text-center"
-                              }
-                            >
-                              <p className="text-xs font-semibold text-slate-400">
-                                Change
-                              </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              deleteTicker(
+                                ticker.id
+                              )
+                            }
+                            className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-100"
+                          >
+                            Delete
+                          </button>
 
-                              <p
-                                className={
-                                  ticker.direction ===
-                                  "up"
-                                    ? "mt-1 font-black text-emerald-600"
-                                    : "mt-1 font-black text-red-600"
-                                }
-                              >
-                                {ticker.direction ===
-                                "up"
-                                  ? "+"
-                                  : "-"}
-                                {Math.abs(
-                                  Number(
-                                    ticker.change_percent
-                                  )
-                                )}
-                                %
-                              </p>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                startEditTicker(
-                                  ticker
-                                )
-                              }
-                              className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-900 hover:bg-blue-100"
-                            >
-                              Edit
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                toggleTicker(
-                                  ticker
-                                )
-                              }
-                              className={
-                                ticker.is_active
-                                  ? "rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700 hover:bg-amber-100"
-                                  : "rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 hover:bg-emerald-100"
-                              }
-                            >
-                              {ticker.is_active
-                                ? "Hide"
-                                : "Activate"}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                deleteTicker(
-                                  ticker.id
-                                )
-                              }
-                              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-100"
-                            >
-                              Delete
-                            </button>
-                          </div>
                         </div>
+
                       </div>
-                    )
-                  )
+
+                    </div>
+                  ))
                 )}
+
               </div>
+
             </div>
+
           </section>
         )}
 
@@ -2877,23 +2333,20 @@ export default function AdminPanel() {
 
         {tab === "website" && (
           <section className="mt-8">
-            <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-7">
+
               <h2 className="text-2xl font-black text-blue-950">
                 Website Content
               </h2>
 
-              <p className="mt-2 text-sm leading-7 text-slate-500">
-                এখানকার information public website-এ
-                automatically ব্যবহার হবে।
-              </p>
-
               <form
-                onSubmit={
-                  saveWebsite
-                }
+                onSubmit={saveWebsite}
                 className="mt-6 space-y-5"
               >
+
                 <div className="grid gap-5 md:grid-cols-2">
+
                   <Input
                     label="Site Name"
                     value={
@@ -2919,6 +2372,7 @@ export default function AdminPanel() {
                       })
                     }
                   />
+
                 </div>
 
                 <TextArea
@@ -2961,6 +2415,7 @@ export default function AdminPanel() {
                 />
 
                 <div className="grid gap-5 md:grid-cols-3">
+
                   <Input
                     label="Location"
                     value={
@@ -2999,6 +2454,7 @@ export default function AdminPanel() {
                       })
                     }
                   />
+
                 </div>
 
                 <button
@@ -3007,15 +2463,17 @@ export default function AdminPanel() {
                 >
                   Save Website Content
                 </button>
+
               </form>
+
             </div>
+
           </section>
         )}
 
         {/* INVESTMENT HISTORY */}
 
-        {tab ===
-          "investment-history" && (
+        {tab === "investment-history" && (
           <section className="mt-8">
             <InvestmentHistoryManager />
           </section>
@@ -3025,7 +2483,11 @@ export default function AdminPanel() {
 
         {tab === "account" && (
           <section className="mt-8 space-y-8">
+
+            {/* CURRENT ADMIN */}
+
             <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-purple-900">
                 Security
               </p>
@@ -3035,11 +2497,12 @@ export default function AdminPanel() {
               </h2>
 
               <p className="mt-2 text-sm leading-7 text-slate-500">
-                Administrator login email এবং password
-                এখান থেকে পরিবর্তন করা যাবে।
+                এখান থেকে administrator login email এবং
+                password পরিবর্তন করা যাবে।
               </p>
 
               <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                   Current Admin Email
                 </p>
@@ -3048,27 +2511,30 @@ export default function AdminPanel() {
                   {currentEmail ||
                     "Loading..."}
                 </p>
+
               </div>
+
             </div>
 
             {/* CHANGE EMAIL */}
 
             <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+
               <h3 className="text-xl font-black text-blue-950">
                 Change Admin Gmail
               </h3>
 
               <p className="mt-2 text-sm leading-7 text-slate-500">
-                বর্তমান password verify করার পরে email
-                change request পাঠানো হবে।
+                নিরাপত্তার জন্য বর্তমান password দিতে হবে।
+                Email change করার পরে Supabase-এর email
+                confirmation সম্পন্ন করতে হবে।
               </p>
 
               <form
-                onSubmit={
-                  changeAdminEmail
-                }
+                onSubmit={changeAdminEmail}
                 className="mt-6 max-w-2xl space-y-5"
               >
+
                 <Input
                   label="New Admin Gmail"
                   value={
@@ -3097,36 +2563,36 @@ export default function AdminPanel() {
 
                 <button
                   type="submit"
-                  disabled={
-                    accountLoading
-                  }
+                  disabled={accountLoading}
                   className="rounded-xl bg-blue-950 px-7 py-3 font-bold text-white hover:bg-purple-950 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {accountLoading
                     ? "Updating..."
                     : "Change Admin Gmail"}
                 </button>
+
               </form>
+
             </div>
 
             {/* CHANGE PASSWORD */}
 
             <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+
               <h3 className="text-xl font-black text-blue-950">
                 Change Admin Password
               </h3>
 
               <p className="mt-2 text-sm leading-7 text-slate-500">
-                বর্তমান password verify করার পরে নতুন password
-                set হবে। কোনো OTP প্রয়োজন নেই।
+                Password পরিবর্তনের আগে বর্তমান password
+                verify করা হবে।
               </p>
 
               <form
-                onSubmit={
-                  changeAdminPassword
-                }
+                onSubmit={changeAdminPassword}
                 className="mt-6 max-w-2xl space-y-5"
               >
+
                 <PasswordInput
                   label="Current Password"
                   value={
@@ -3166,40 +2632,93 @@ export default function AdminPanel() {
                   }
                 />
 
-                <button
-                  type="submit"
-                  disabled={
-                    accountLoading
-                  }
-                  className="rounded-xl bg-blue-950 px-7 py-3 font-bold text-white hover:bg-purple-950 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {accountLoading
-                    ? "Updating..."
-                    : "Change Admin Password"}
-                </button>
+                {passwordOtpStep && (
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                    <label className="block text-sm font-bold text-blue-950">
+                      Gmail Verification Code
+                    </label>
+                    <input
+                      value={passwordOtp}
+                      onChange={(e) =>
+                        setPasswordOtp(
+                          e.target.value.replace(/\D/g, "").slice(0, 6)
+                        )
+                      }
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      placeholder="6-digit code"
+                      className="mt-2 w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-center text-xl tracking-[0.4em] outline-none focus:border-blue-950"
+                    />
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="submit"
+                    disabled={accountLoading}
+                    className="rounded-xl bg-blue-950 px-7 py-3 font-bold text-white hover:bg-purple-950 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {accountLoading
+                      ? "Processing..."
+                      : passwordOtpStep
+                        ? "Verify Code & Change Password"
+                        : "Send Gmail Verification Code"}
+                  </button>
+
+                  {passwordOtpStep && (
+                    <button
+                      type="button"
+                      disabled={accountLoading}
+                      onClick={() => {
+                        setPasswordOtp("");
+                        setPasswordOtpStep(false);
+                        setMessage("");
+                      }}
+                      className="rounded-xl border border-slate-300 px-6 py-3 font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      Start Over
+                    </button>
+                  )}
+                </div>
+
               </form>
+
             </div>
 
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6">
-              <h3 className="font-black text-emerald-900">
-                Security Status
+            {/* SECURITY NOTICE */}
+
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+
+              <h3 className="font-black text-amber-900">
+                Security Notice
               </h3>
 
-              <p className="mt-2 text-sm leading-7 text-emerald-800">
+              <p className="mt-2 text-sm leading-7 text-amber-800">
                 Current password browser-এ save করা হয় না।
-                Password change করার আগে Supabase Authentication
-                দিয়ে current password verify করা হয়।
+                Verification সরাসরি Supabase Authentication-এর
+                মাধ্যমে করা হয়।
               </p>
+
+              <p className="mt-2 text-sm leading-7 text-amber-800">
+                পরবর্তী ধাপে চাইলে Admin Login এবং sensitive
+                account changes-এর জন্য email OTP / reauthentication
+                security যোগ করা যাবে।
+              </p>
+
             </div>
+
           </section>
         )}
+
       </div>
     </main>
   );
 }
 
 /* =========================
-   INPUT
+   INPUT COMPONENT
 ========================= */
 
 function Input({
@@ -3220,11 +2739,9 @@ function Input({
       <input
         value={value}
         onChange={(e) =>
-          onChange(
-            e.target.value
-          )
+          onChange(e.target.value)
         }
-        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-blue-950 focus:ring-2 focus:ring-blue-100"
+        className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-950"
       />
     </div>
   );
@@ -3253,19 +2770,17 @@ function PasswordInput({
         type="password"
         value={value}
         onChange={(e) =>
-          onChange(
-            e.target.value
-          )
+          onChange(e.target.value)
         }
         autoComplete="new-password"
-        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-blue-950 focus:ring-2 focus:ring-blue-100"
+        className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-950"
       />
     </div>
   );
 }
 
 /* =========================
-   TEXTAREA
+   TEXTAREA COMPONENT
 ========================= */
 
 function TextArea({
@@ -3286,19 +2801,17 @@ function TextArea({
       <textarea
         value={value}
         onChange={(e) =>
-          onChange(
-            e.target.value
-          )
+          onChange(e.target.value)
         }
         rows={6}
-        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none transition focus:border-blue-950 focus:ring-2 focus:ring-blue-100"
+        className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-950"
       />
     </div>
   );
 }
 
 /* =========================
-   STAT
+   STAT COMPONENT
 ========================= */
 
 function Stat({
@@ -3310,6 +2823,7 @@ function Stat({
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+
       <p className="text-sm font-semibold text-slate-500">
         {label}
       </p>
@@ -3317,6 +2831,7 @@ function Stat({
       <p className="mt-3 text-4xl font-black text-blue-950">
         {value}
       </p>
+
     </div>
   );
 }
