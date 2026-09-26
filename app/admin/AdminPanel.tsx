@@ -678,6 +678,11 @@ export default function AdminPanel() {
       return;
     }
 
+    if (investorForm.password && investorForm.password.length < 8) {
+      setMessage("New password must be at least 8 characters.");
+      return;
+    }
+
     const numericValues = [
       investorForm.serial_number,
       investorForm.total_investment,
@@ -716,7 +721,49 @@ export default function AdminPanel() {
       return;
     }
 
-    setMessage("Investor data updated successfully.");
+    if (investorForm.password) {
+      try {
+        const passwordResponse = await fetch(
+          "/api/admin/update-investor-password",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              investorId: editingInvestorId,
+              newPassword: investorForm.password,
+            }),
+          }
+        );
+
+        const passwordResult =
+          await passwordResponse.json().catch(() => ({}));
+
+        if (!passwordResponse.ok) {
+          setMessage(
+            passwordResult.error ||
+              "Investor information updated, but password could not be changed."
+          );
+          await loadAll();
+          return;
+        }
+      } catch (passwordError) {
+        setMessage(
+          passwordError instanceof Error
+            ? `Investor information updated, but password could not be changed: ${passwordError.message}`
+            : "Investor information updated, but password could not be changed."
+        );
+        await loadAll();
+        return;
+      }
+    }
+
+    setMessage(
+      investorForm.password
+        ? "Investor data and password updated successfully."
+        : "Investor data updated successfully."
+    );
     cancelEditInvestor();
     await loadAll();
   }
@@ -1580,6 +1627,16 @@ export default function AdminPanel() {
                   <Input label="NID" value={investorForm.nid} onChange={(v) => setInvestorForm({ ...investorForm, nid: v })} />
                   <Input label="Username" value={investorForm.username} onChange={(v) => setInvestorForm({ ...investorForm, username: v })} />
                   <Input label="Email" value={investorForm.email} onChange={(v) => setInvestorForm({ ...investorForm, email: v })} />
+                  <PasswordInput
+                    label="New Password (optional)"
+                    value={investorForm.password}
+                    onChange={(v) =>
+                      setInvestorForm({
+                        ...investorForm,
+                        password: v,
+                      })
+                    }
+                  />
                   <Input label="Phone" value={investorForm.phone} onChange={(v) => setInvestorForm({ ...investorForm, phone: v })} />
                   <Input label="Address" value={investorForm.address} onChange={(v) => setInvestorForm({ ...investorForm, address: v })} />
                   <Input label="Total Investment" value={investorForm.total_investment} onChange={(v) => setInvestorForm({ ...investorForm, total_investment: v })} />
@@ -1674,7 +1731,7 @@ export default function AdminPanel() {
                       </th>
 
                       <th className="px-5 py-4">
-                        Total Investment
+                        Investment
                       </th>
 
                       <th className="px-5 py-4">
