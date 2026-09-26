@@ -2,23 +2,12 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "../../../../lib/supabase/server";
 
-const adminSupabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export async function POST(request: Request) {
   try {
-    // ---------------------------------
-    // 1. Check logged-in user
-    // ---------------------------------
-
+    // Check current logged-in user
     const supabase = await createServerClient();
 
     const {
@@ -28,124 +17,100 @@ export async function POST(request: Request) {
 
     if (userError || !user) {
       return NextResponse.json(
-        {
-          error: "Unauthorized.",
-        },
+        { error: "You must be logged in as an admin." },
         { status: 401 }
       );
     }
 
-    // ---------------------------------
-    // 2. Check admin role
-    // ---------------------------------
-
+    // Check admin role
     const { data: role, error: roleError } =
       await supabase.rpc("get_my_role");
 
     if (roleError || role !== "admin") {
       return NextResponse.json(
-        {
-          error: "Admin access required.",
-        },
+        { error: "Admin permission required." },
         { status: 403 }
       );
     }
 
-    // ---------------------------------
-    // 3. Read request body
-    // ---------------------------------
-
+    // Read form data
     const body = await request.json();
 
     const {
+      serial_number,
       name,
+      nid,
       email,
       username,
       password,
-      nid,
-      phone,
-      address,
-      serial_number,
-
       total_investment,
       total_return,
       total_returned,
       due_amount,
       profit,
+      phone,
+      address,
+      is_active,
     } = body;
 
-    // ---------------------------------
-    // 4. Validate required fields
-    // ---------------------------------
-
-    if (!name?.trim()) {
-      return NextResponse.json(
-        {
-          error: "Investor name is required.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!email?.trim()) {
-      return NextResponse.json(
-        {
-          error: "Investor email is required.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!username?.trim()) {
-      return NextResponse.json(
-        {
-          error: "Investor username is required.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!password) {
-      return NextResponse.json(
-        {
-          error: "Investor password is required.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (password.length < 8) {
-      return NextResponse.json(
-        {
-          error:
-            "Investor password must be at least 8 characters.",
-        },
-        { status: 400 }
-      );
-    }
-
-    // ---------------------------------
-    // 5. Normalize email + username
-    // ---------------------------------
-
     const normalizedEmail =
-      email.trim().toLowerCase();
+      typeof email === "string"
+        ? email.trim().toLowerCase()
+        : "";
 
     const normalizedUsername =
-      username.trim().toLowerCase();
+      typeof username === "string"
+        ? username.trim().toLowerCase()
+        : "";
 
-    // ---------------------------------
-    // 6. Check duplicate username
-    // ---------------------------------
+    // Validation
+    if (!name?.trim()) {
+      return NextResponse.json(
+        { error: "Investor name is required." },
+        { status: 400 }
+      );
+    }
 
-    const {
-      data: existingInvestor,
-      error: usernameCheckError,
-    } = await adminSupabase
-      .from("investors")
-      .select("id")
-      .eq("username", normalizedUsername)
-      .maybeSingle();
+    if (!normalizedEmail) {
+      return NextResponse.json(
+        { error: "Investor email is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!normalizedUsername) {
+      return NextResponse.json(
+        { error: "Investor username is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!password || password.length < 8) {
+      return NextResponse.json(
+        { error: "Investor password must be at least 8 characters." },
+        { status: 400 }
+      );
+    }
+
+    // Server-side Supabase client
+    const adminSupabase = createClient(
+      supabaseUrl,
+      serviceRoleKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
+
+    // Check duplicate username in investors table
+    const { data: existingUsername, error: usernameCheckError } =
+      await adminSupabase
+        .from("investors")
+        .select("id, username")
+        .eq("username", normalizedUsername)
+        .maybeSingle();
 
     if (usernameCheckError) {
       console.error(
@@ -154,36 +119,60 @@ export async function POST(request: Request) {
       );
 
       return NextResponse.json(
-        {
-          error:
-            "Could not verify username availability.",
-        },
+        { error: "Could not check investor username." },
         { status: 500 }
       );
     }
 
-    if (existingInvestor) {
+    if (existingUsername) {
       return NextResponse.json(
         {
-          error: "This username is already in use.",
+          error:
+            "This username is already in use. Please choose another username.",
         },
         { status: 409 }
       );
     }
 
-    // ---------------------------------
-    // 7. Create Supabase Auth account
-    // ---------------------------------
+    // Check duplicate email in investors table
+    const { data: existingInvestorEmail, error: emailCheckError } =
+      await adminSupabase
+        .from("investors")
+        .select("id, email")
+        .eq("email", normalizedEmail)
+        .maybeSingle();
 
+    if (emailCheckError) {
+      console.error(
+        "Investor email check error:",
+        emailCheckError
+      );
+
+      return NextResponse.json(
+        { error: "Could not check investor email." },
+        { status: 500 }
+      );
+    }
+
+    if (existingInvestorEmail) {
+      return NextResponse.json(
+        {
+          error:
+            "This email is already used by an investor. Please use another email.",
+        },
+        { status: 409 }
+      );
+    }
+
+    // Create Supabase Auth account
     const {
       data: authData,
       error: authError,
-    } =
-      await adminSupabase.auth.admin.createUser({
-        email: normalizedEmail,
-        password,
-        email_confirm: true,
-      });
+    } = await adminSupabase.auth.admin.createUser({
+      email: normalizedEmail,
+      password,
+      email_confirm: true,
+    });
 
     if (authError || !authData.user) {
       console.error(
@@ -191,11 +180,21 @@ export async function POST(request: Request) {
         authError
       );
 
+      if (authError?.code === "email_exists") {
+        return NextResponse.json(
+          {
+            error:
+              "This email already exists in Supabase Auth. Please use another email.",
+          },
+          { status: 409 }
+        );
+      }
+
       return NextResponse.json(
         {
           error:
             authError?.message ||
-            "Could not create investor authentication account.",
+            "Could not create investor login account.",
         },
         { status: 400 }
       );
@@ -203,31 +202,26 @@ export async function POST(request: Request) {
 
     const authUserId = authData.user.id;
 
-    // ---------------------------------
-    // 8. Create investor role profile
-    // ---------------------------------
-
-    const {
-      error: profileError,
-    } = await adminSupabase
-      .from("profiles")
-      .upsert(
-        {
-          id: authUserId,
-          role: "investor",
-        },
-        {
-          onConflict: "id",
-        }
-      );
+    // Create investor profile
+    const { error: profileError } =
+      await adminSupabase
+        .from("profiles")
+        .upsert(
+          {
+            id: authUserId,
+            role: "investor",
+          },
+          {
+            onConflict: "id",
+          }
+        );
 
     if (profileError) {
       console.error(
-        "Investor role profile creation error:",
+        "Investor profile creation error:",
         profileError
       );
 
-      // Rollback Auth account
       await adminSupabase.auth.admin.deleteUser(
         authUserId
       );
@@ -235,77 +229,56 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Could not create investor access role.",
+            "Could not create investor profile.",
         },
         { status: 500 }
       );
     }
 
-    // ---------------------------------
-    // 9. Create investor profile
-    // ---------------------------------
-
-    const {
-      data: investor,
-      error: investorError,
-    } =
+    // Create canonical investor record
+    const { data: investor, error: investorError } =
       await adminSupabase
         .from("investors")
         .insert({
           user_id: authUserId,
-
-          serial_number:
-            Number(serial_number || 0),
-
+          serial_number: Number(serial_number) || 0,
           name: name.trim(),
-
-          nid:
-            nid?.trim() || null,
-
+          nid: nid?.trim() || null,
           email: normalizedEmail,
-
           username: normalizedUsername,
-
           total_investment:
-            Number(total_investment || 0),
-
+            Number(total_investment) || 0,
           total_return:
-            Number(total_return || 0),
-
+            Number(total_return) || 0,
           total_returned:
-            Number(total_returned || 0),
-
+            Number(total_returned) || 0,
           due_amount:
-            Number(due_amount || 0),
-
+            Number(due_amount) || 0,
           profit:
-            Number(profit || 0),
-
+            Number(profit) || 0,
           phone:
             phone?.trim() || null,
-
           address:
             address?.trim() || null,
-
-          is_active: true,
+          is_active:
+            is_active !== false,
         })
-        .select()
+        .select("*")
         .single();
 
-    // ---------------------------------
-    // 10. Rollback if investor profile fails
-    // ---------------------------------
-
-    if (investorError || !investor) {
+    if (investorError) {
       console.error(
-        "Investor profile creation error:",
+        "Investor record creation error:",
         investorError
       );
 
-      // Delete Auth user.
-      // profiles row will also be removed
-      // because profiles.id references auth.users(id)
-      // with ON DELETE CASCADE.
+      // Roll back profile
+      await adminSupabase
+        .from("profiles")
+        .delete()
+        .eq("id", authUserId);
+
+      // Roll back auth account
       await adminSupabase.auth.admin.deleteUser(
         authUserId
       );
@@ -313,23 +286,18 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            investorError?.message ||
-            "Could not create investor profile.",
+            investorError.message ||
+            "Could not create investor record.",
         },
-        { status: 400 }
+        { status: 500 }
       );
     }
-
-    // ---------------------------------
-    // 11. Success
-    // ---------------------------------
 
     return NextResponse.json(
       {
         success: true,
         investor,
-        message:
-          "Investor account created successfully.",
+        message: "Investor created successfully.",
       },
       { status: 201 }
     );
@@ -341,7 +309,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        error: "Unexpected server error.",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not create investor.",
       },
       { status: 500 }
     );
