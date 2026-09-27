@@ -2,90 +2,163 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "../../../../lib/supabase/server";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const adminSupabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+);
 
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient();
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const body = await request.json();
 
-    if (!user) {
+    const investorId =
+      typeof body.investorId === "string"
+        ? body.investorId
+        : "";
+
+    const newPassword =
+      typeof body.newPassword === "string"
+        ? body.newPassword
+        : "";
+
+    const accessToken =
+      typeof body.accessToken === "string"
+        ? body.accessToken
+        : "";
+
+    if (!investorId) {
       return NextResponse.json(
-        { error: "Unauthorized." },
+        { error: "Investor ID is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!newPassword) {
+      return NextResponse.json(
+        { error: "New password is required." },
+        { status: 400 }
+      );
+    }
+
+    if (newPassword.length < 8) {
+      return NextResponse.json(
+        { error: "New password must be at least 8 characters." },
+        { status: 400 }
+      );
+    }
+
+    let adminUser = null;
+
+    if (accessToken) {
+      const {
+        data: { user },
+        error: tokenError,
+      } = await adminSupabase.auth.getUser(accessToken);
+
+      if (!tokenError && user) {
+        adminUser = user;
+      }
+    }
+
+    if (!adminUser) {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (!userError && user) {
+        adminUser = user;
+      }
+    }
+
+    if (!adminUser) {
+      return NextResponse.json(
+        { error: "Unauthorized. Please log in again." },
         { status: 401 }
       );
     }
 
-    const { data: role, error: roleError } =
-      await supabase.rpc("get_my_role");
+    const { data: profile, error: profileError } =
+      await adminSupabase
+        .from("profiles")
+        .select("role")
+        .eq("id", adminUser.id)
+        .maybeSingle();
 
-    if (roleError || role !== "admin") {
+    if (profileError) {
       return NextResponse.json(
-        { error: "Only admins can change investor passwords." },
+        { error: profileError.message },
+        { status: 500 }
+      );
+    }
+
+    if (profile?.role !== "admin") {
+      return NextResponse.json(
+        { error: "Admin access required." },
         { status: 403 }
       );
     }
 
-    const body = await request.json();
+    const { data: investor, error: investorError } =
+      await adminSupabase
+        .from("investors")
+        .select("id, user_id, name, email")
+        .eq("id", investorId)
+        .maybeSingle();
 
-    const userId = String(body.userId || "").trim();
-    const password = String(body.password || "");
-
-    if (!userId) {
+    if (investorError) {
       return NextResponse.json(
-        { error: "Investor user ID is required." },
-        { status: 400 }
+        { error: investorError.message },
+        { status: 500 }
       );
     }
 
-    if (password.length < 8) {
+    if (!investor) {
       return NextResponse.json(
-        { error: "Password must be at least 8 characters." },
-        { status: 400 }
+        { error: "Investor not found." },
+        { status: 404 }
       );
     }
 
-    const adminClient = createClient(
-      supabaseUrl,
-      serviceRoleKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
+    if (!investor.user_id) {
+      return NextResponse.json(
+        {
+          error:
+            "This investor does not have a linked authentication account.",
         },
-      }
-    );
-
-    const { error } =
-      await adminClient.auth.admin.updateUserById(
-        userId,
-        { password }
-      );
-
-    if (error) {
-      console.error(
-        "Update investor password error:",
-        error
-      );
-
-      return NextResponse.json(
-        { error: error.message },
         { status: 400 }
+      );
+    }
+
+    const { error: updateAuthError } =
+      await adminSupabase.auth.admin.updateUserById(
+        investor.user_id,
+        {
+          password: newPassword,
+        }
+      );
+
+    if (updateAuthError) {
+      return NextResponse.json(
+        { error: updateAuthError.message },
+        { status: 500 }
       );
     }
 
     return NextResponse.json({
       success: true,
+      message: "Investor password updated successfully.",
     });
   } catch (error) {
-    console.error(
-      "Update investor password route error:",
-      error
-    );
+    console.error("Update investor password error:", error);
 
     return NextResponse.json(
       {

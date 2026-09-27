@@ -650,7 +650,6 @@ export default function AdminPanel() {
       phone: "",
       address: "",
     });
-    setMessage("");
   }
 
   /* =========================
@@ -723,19 +722,24 @@ export default function AdminPanel() {
 
     if (investorForm.password) {
       try {
-        const passwordResponse = await fetch(
-          "/api/admin/update-investor-password",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              investorId: editingInvestorId,
-              newPassword: investorForm.password,
-            }),
-          }
-        );
+        const {
+  data: { session },
+} = await supabase.auth.getSession();
+
+const passwordResponse = await fetch(
+  "/api/admin/update-investor-password",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      investorId: editingInvestorId,
+      newPassword: investorForm.password,
+      accessToken: session?.access_token || "",
+    }),
+  }
+);
 
         const passwordResult =
           await passwordResponse.json().catch(() => ({}));
