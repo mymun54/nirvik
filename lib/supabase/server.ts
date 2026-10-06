@@ -27,3 +27,8 @@ export async function createClient() {
     }
   );
 }
+
+// Backward-compatible name for API routes
+export async function createServerSupabaseClient() {
+  return createClient();
+}

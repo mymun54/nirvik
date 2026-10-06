@@ -1,10 +1,22 @@
-import InvestmentChart from "../components/InvestmentChart";
+﻿import InvestmentChart from "../../components/InvestmentChart";
 import { redirect } from "next/navigation";
 import { createClient } from "../../lib/supabase/server";
 
 type InvestorDirectoryItem = {
   serial_number: number;
-  username: string | null;
+  name: string | null;
+};
+
+type RefundedHistoryItem = {
+  id: string;
+  investor_id: string;
+  refund_date: string;
+};
+
+type PaidHistoryItem = {
+  id: string;
+  investor_id: string;
+  paid_date: string;
 };
 
 export default async function DashboardPage() {
@@ -25,20 +37,21 @@ export default async function DashboardPage() {
   const { data: investor, error } = await supabase
     .from("investors")
     .select(
-      `
-      id,
-      name,
-      email,
-      username,
-      phone,
-      address,
-      total_investment,
-      total_return,
-      total_returned,
-      due_amount,
-      profit,
-      is_active
-      `
+        `
+  id,
+  serial_number,
+  name,
+  email,
+  username,
+  phone,
+  address,
+  total_investment,
+  total_return,
+  total_returned,
+  due_amount,
+  profit,
+  is_active
+  `
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -82,42 +95,53 @@ export default async function DashboardPage() {
   }
 
   // =========================
-  // INVESTMENT HISTORY
+  // REFUNDED + PAID HISTORY
+  // ONLY CURRENT INVESTOR
   // =========================
 
-  const { data: history, error: historyError } = await supabase
-    .from("investment_history")
-    .select(
-      `
-      id,
-      project_name,
-      investment_amount,
-      return_amount,
-      returned_amount,
-      profit,
-      status,
-      investment_date
-      `
-    )
-    .eq("investor_id", investor.id)
-    .order("investment_date", { ascending: true });
+  const [refundedResponse, paidResponse, directoryResponse] =
+    await Promise.all([
+      supabase
+        .from("refunded_investors")
+        .select("id, investor_id, refund_date")
+        .eq("investor_id", investor.id)
+        .order("refund_date", { ascending: false }),
 
-  if (historyError) {
-    console.error("Investment history error:", historyError);
+      supabase
+        .from("paid_investors")
+        .select("id, investor_id, paid_date")
+        .eq("investor_id", investor.id)
+        .order("paid_date", { ascending: false }),
+
+      supabase.rpc("get_investor_directory"),
+    ]);
+
+  if (refundedResponse.error) {
+    console.error(
+      "Refunded investors history error:",
+      refundedResponse.error
+    );
   }
 
-  // =========================
-  // INVESTOR DIRECTORY
-  // =========================
-
-  const { data: investorDirectory, error: directoryError } =
-    await supabase.rpc("get_investor_directory");
-
-  if (directoryError) {
-    console.error("Investor directory error:", directoryError);
+  if (paidResponse.error) {
+    console.error("Paid investors history error:", paidResponse.error);
   }
 
-  const directory: InvestorDirectoryItem[] = investorDirectory || [];
+  if (directoryResponse.error) {
+    console.error(
+      "Investor directory error:",
+      directoryResponse.error
+    );
+  }
+
+  const refundedHistory: RefundedHistoryItem[] =
+    (refundedResponse.data || []) as RefundedHistoryItem[];
+
+  const paidHistory: PaidHistoryItem[] =
+    (paidResponse.data || []) as PaidHistoryItem[];
+
+  const directory: InvestorDirectoryItem[] =
+    (directoryResponse.data || []) as InvestorDirectoryItem[];
 
   // =========================
   // ACCOUNTING VALUES
@@ -128,15 +152,6 @@ export default async function DashboardPage() {
   const totalAmountReceivable = Number(investor.total_return || 0);
   const totalAmountReturned = Number(investor.total_returned || 0);
   const outstandingAmount = Number(investor.due_amount || 0);
-
-  // Amount still receivable from NIRVIK
-  const accountsReceivable = Math.max(
-    totalAmountReceivable - totalAmountReturned,
-    0
-  );
-
-  // Amount payable by the investor
-  const accountsPayable = 0;
 
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-10">
@@ -172,7 +187,7 @@ export default async function DashboardPage() {
             SUMMARY CARDS
         ========================= */}
 
-        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
 
           <SummaryCard
             title="Total Investment"
@@ -199,38 +214,20 @@ export default async function DashboardPage() {
             value={outstandingAmount}
           />
 
-          <SummaryCard
-            title="Accounts receivable"
-            value={accountsReceivable}
-          />
-
-          <SummaryCard
-            title="Accounts payable"
-            value={accountsPayable}
-          />
-
         </div>
 
         {/* =========================
-            INVESTMENT GRAPH
+            PORTFOLIO GRAPH
         ========================= */}
 
-        <section className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-
-          <div>
-            <h2 className="text-xl font-black text-blue-950">
-              Investment Performance
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Your investment and return history.
-            </p>
-          </div>
-
-          <div className="mt-6">
-            <InvestmentChart data={history || []} />
-          </div>
-
+        <section className="mt-8">
+          <InvestmentChart
+            totalInvestment={totalInvestment}
+            totalProfit={totalProfit}
+            totalReturned={totalAmountReturned}
+            totalReturn={totalAmountReceivable}
+            dueAmount={outstandingAmount}
+          />
         </section>
 
         {/* =========================
@@ -274,7 +271,7 @@ export default async function DashboardPage() {
                     </th>
 
                     <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
-                      Username
+                      Name
                     </th>
 
                   </tr>
@@ -284,7 +281,7 @@ export default async function DashboardPage() {
 
                   {directory.map((item, index) => (
                     <tr
-                      key={`${item.serial_number}-${item.username}-${index}`}
+                      key={`${item.serial_number}-${item.name}-${index}`}
                       className="hover:bg-slate-50"
                     >
 
@@ -293,7 +290,7 @@ export default async function DashboardPage() {
                       </td>
 
                       <td className="px-6 py-4 text-sm font-semibold text-blue-950">
-                        {item.username || "—"}
+                        {item.name || "â€”"}
                       </td>
 
                     </tr>
@@ -313,51 +310,39 @@ export default async function DashboardPage() {
         </section>
 
         {/* =========================
-            INVESTMENT HISTORY
+            REFUNDED INVESTORS
         ========================= */}
 
         <section className="mt-8 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
 
           <div className="border-b border-slate-200 p-6">
             <h2 className="text-xl font-black text-blue-950">
-              Investment History
+              Refunded Investors
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Your investment records.
+              Your refund records.
             </p>
           </div>
 
-          {history && history.length > 0 ? (
+          {refundedHistory.length > 0 ? (
             <div className="overflow-x-auto">
 
-              <table className="w-full min-w-[800px] text-left">
+              <table className="w-full min-w-[600px] text-left">
 
                 <thead className="bg-slate-50">
                   <tr>
 
-                    <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500">
-                      Date
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
+                      Refund Date
                     </th>
 
-                    <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500">
-                      Project
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
+                      Serial No.
                     </th>
 
-                    <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500">
-                      Investment
-                    </th>
-
-                    <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500">
-                      Return
-                    </th>
-
-                    <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500">
-                      Profit
-                    </th>
-
-                    <th className="px-6 py-4 text-xs font-bold uppercase text-slate-500">
-                      Status
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
+                      Name
                     </th>
 
                   </tr>
@@ -365,45 +350,22 @@ export default async function DashboardPage() {
 
                 <tbody className="divide-y divide-slate-100">
 
-                  {history.map((item) => (
+                  {refundedHistory.map((item) => (
                     <tr
                       key={item.id}
                       className="hover:bg-slate-50"
                     >
 
                       <td className="px-6 py-4 text-sm text-slate-600">
-                        {item.investment_date}
-                      </td>
-
-                      <td className="px-6 py-4 font-semibold text-slate-800">
-                        {item.project_name}
+                        {item.refund_date}
                       </td>
 
                       <td className="px-6 py-4 text-sm font-semibold text-slate-700">
-                        ৳
-                        {Number(
-                          item.investment_amount || 0
-                        ).toLocaleString()}
+                        {investor.serial_number || "â€”"}
                       </td>
 
-                      <td className="px-6 py-4 text-sm font-semibold text-slate-700">
-                        ৳
-                        {Number(
-                          item.return_amount || 0
-                        ).toLocaleString()}
-                      </td>
-
-                      <td className="px-6 py-4 text-sm font-bold text-green-700">
-                        ৳
-                        {Number(
-                          item.profit || 0
-                        ).toLocaleString()}
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold capitalize text-blue-700">
-                          {item.status}
-                        </span>
+                      <td className="px-6 py-4 text-sm font-bold text-blue-950">
+                        {investor.name}
                       </td>
 
                     </tr>
@@ -416,7 +378,82 @@ export default async function DashboardPage() {
             </div>
           ) : (
             <div className="p-10 text-center text-sm text-slate-400">
-              No investment history available yet.
+              No refund history available yet.
+            </div>
+          )}
+
+        </section>
+
+        {/* =========================
+            PAID INVESTORS
+        ========================= */}
+
+        <section className="mt-8 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+
+          <div className="border-b border-slate-200 p-6">
+            <h2 className="text-xl font-black text-blue-950">
+              Paid Investors
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Your paid records.
+            </p>
+          </div>
+
+          {paidHistory.length > 0 ? (
+            <div className="overflow-x-auto">
+
+              <table className="w-full min-w-[600px] text-left">
+
+                <thead className="bg-slate-50">
+                  <tr>
+
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
+                      Paid Date
+                    </th>
+
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
+                      Serial No.
+                    </th>
+
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
+                      Name
+                    </th>
+
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+
+                  {paidHistory.map((item) => (
+                    <tr
+                      key={item.id}
+                      className="hover:bg-slate-50"
+                    >
+
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {item.paid_date}
+                      </td>
+
+                      <td className="px-6 py-4 text-sm font-semibold text-slate-700">
+                        {investor.serial_number || "â€”"}
+                      </td>
+
+                      <td className="px-6 py-4 text-sm font-bold text-blue-950">
+                        {investor.name}
+                      </td>
+
+                    </tr>
+                  ))}
+
+                </tbody>
+
+              </table>
+
+            </div>
+          ) : (
+            <div className="p-10 text-center text-sm text-slate-400">
+              No paid history available yet.
             </div>
           )}
 
@@ -442,7 +479,7 @@ function SummaryCard({
       </p>
 
       <p className="mt-3 text-2xl font-black text-blue-950">
-        ৳{Number(value || 0).toLocaleString()}
+        à§³{Number(value || 0).toLocaleString("en-BD")}
       </p>
 
     </div>

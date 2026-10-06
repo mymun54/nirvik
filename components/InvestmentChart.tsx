@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   BarChart,
@@ -27,26 +27,11 @@ export default function InvestmentChart({
   dueAmount,
 }: InvestmentChartProps) {
   const data = [
-    {
-      name: "Investment",
-      value: Math.max(Number(totalInvestment) || 0, 0),
-    },
-    {
-      name: "Profit",
-      value: Math.max(Number(totalProfit) || 0, 0),
-    },
-    {
-      name: "Returned",
-      value: Math.max(Number(totalReturned) || 0, 0),
-    },
-    {
-      name: "Total Return",
-      value: Math.max(Number(totalReturn) || 0, 0),
-    },
-    {
-      name: "Due",
-      value: Math.max(Number(dueAmount) || 0, 0),
-    },
+    { name: "Investment", value: Number(totalInvestment) || 0 },
+    { name: "Profit", value: Number(totalProfit) || 0 },
+    { name: "Returned", value: Number(totalReturned) || 0 },
+    { name: "Total Return", value: Number(totalReturn) || 0 },
+    { name: "Due", value: Number(dueAmount) || 0 },
   ];
 
   const colors = [
@@ -63,7 +48,6 @@ export default function InvestmentChart({
         <h2 className="text-xl font-black text-blue-950">
           Portfolio Overview
         </h2>
-
         <p className="mt-1 text-sm text-slate-500">
           Your current investment and financial position.
         </p>
@@ -73,46 +57,24 @@ export default function InvestmentChart({
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={data}
-            margin={{
-              top: 10,
-              right: 20,
-              left: 10,
-              bottom: 10,
-            }}
+            margin={{ top: 10, right: 20, left: 10, bottom: 10 }}
           >
-            <CartesianGrid
-              strokeDasharray="3 3"
-              vertical={false}
-            />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
 
             <XAxis
               dataKey="name"
-              tick={{
-                fontSize: 12,
-              }}
+              tick={{ fontSize: 12 }}
               axisLine={false}
               tickLine={false}
             />
 
             <YAxis
-              tick={{
-                fontSize: 11,
-              }}
+              tick={{ fontSize: 11 }}
               axisLine={false}
               tickLine={false}
             />
 
-            <Tooltip
-              formatter={(value) => [
-                `৳${Number(value ?? 0).toLocaleString("en-BD")}`,
-                "Amount",
-              ]}
-              contentStyle={{
-                borderRadius: "14px",
-                border: "1px solid #e2e8f0",
-                boxShadow: "0 8px 30px rgba(0,0,0,0.08)",
-              }}
-            />
+            <Tooltip />
 
             <Bar
               dataKey="value"
