@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   BarChart,
@@ -72,9 +72,10 @@ export default function InvestmentChart({
               tick={{ fontSize: 11 }}
               axisLine={false}
               tickLine={false}
+              tickFormatter={(value) => `\u09F3${Number(value || 0).toLocaleString("en-BD")}`}
             />
 
-            <Tooltip />
+            <Tooltip formatter={(value) => [`\u09F3${Number(value || 0).toLocaleString("en-BD")}`, "Amount"]} />
 
             <Bar
               dataKey="value"

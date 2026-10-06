@@ -1,4 +1,4 @@
-﻿import InvestmentChart from "../../components/InvestmentChart";
+import InvestmentChart from "../../components/InvestmentChart";
 import { redirect } from "next/navigation";
 import { createClient } from "../../lib/supabase/server";
 
@@ -290,7 +290,7 @@ export default async function DashboardPage() {
                       </td>
 
                       <td className="px-6 py-4 text-sm font-semibold text-blue-950">
-                        {item.name || "â€”"}
+                        {item.name || "—"}
                       </td>
 
                     </tr>
@@ -361,7 +361,7 @@ export default async function DashboardPage() {
                       </td>
 
                       <td className="px-6 py-4 text-sm font-semibold text-slate-700">
-                        {investor.serial_number || "â€”"}
+                        {investor.serial_number || "—"}
                       </td>
 
                       <td className="px-6 py-4 text-sm font-bold text-blue-950">
@@ -436,7 +436,7 @@ export default async function DashboardPage() {
                       </td>
 
                       <td className="px-6 py-4 text-sm font-semibold text-slate-700">
-                        {investor.serial_number || "â€”"}
+                        {investor.serial_number || "—"}
                       </td>
 
                       <td className="px-6 py-4 text-sm font-bold text-blue-950">
@@ -479,7 +479,7 @@ function SummaryCard({
       </p>
 
       <p className="mt-3 text-2xl font-black text-blue-950">
-        à§³{Number(value || 0).toLocaleString("en-BD")}
+        {"\u09F3"}{Number(value || 0).toLocaleString("en-BD")}
       </p>
 
     </div>

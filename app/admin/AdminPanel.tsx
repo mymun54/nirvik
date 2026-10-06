@@ -297,14 +297,10 @@ export default function AdminPanel() {
     e: React.FormEvent<HTMLFormElement>
   ) {
     e.preventDefault();
-
     setMessage("");
 
-    const newEmail =
-      emailForm.newEmail.trim().toLowerCase();
-
-    const currentPassword =
-      emailForm.currentPassword;
+    const newEmail = emailForm.newEmail.trim().toLowerCase();
+    const currentPassword = emailForm.currentPassword;
 
     if (!newEmail) {
       setMessage("New admin email is required.");
@@ -312,9 +308,7 @@ export default function AdminPanel() {
     }
 
     if (!currentPassword) {
-      setMessage(
-        "Current password is required."
-      );
+      setMessage("Current password is required.");
       return;
     }
 
@@ -322,55 +316,46 @@ export default function AdminPanel() {
       currentEmail &&
       newEmail === currentEmail.toLowerCase()
     ) {
-      setMessage(
-        "New email must be different from the current email."
-      );
+      setMessage("New email must be different from the current email.");
       return;
     }
 
     setAccountLoading(true);
 
     try {
-      const { error: verifyError } =
-        await supabase.auth.signInWithPassword({
-          email: currentEmail,
-          password: currentPassword,
-        });
+      const response = await fetch("/api/admin/account", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "email",
+          newEmail,
+          currentPassword,
+        }),
+      });
 
-      if (verifyError) {
-        setMessage(
-          "Current password is incorrect."
-        );
+      const result = await response.json();
+
+      if (!response.ok) {
+        setMessage(result.error || "Could not change admin email.");
         return;
       }
 
-      const { error } =
-        await supabase.auth.updateUser({
-          email: newEmail,
-        });
-
-      if (error) {
-        setMessage(
-          `Could not change admin email: ${error.message}`
-        );
-        return;
-      }
-
-      setMessage(
-        "Email change request sent. Please complete the email confirmation from the required inbox(es)."
-      );
-
+      setMessage("Admin Gmail changed successfully.");
       setEmailForm({
         newEmail: "",
         currentPassword: "",
       });
 
       await loadAdminAccount();
+    } catch (error) {
+      console.error("Admin email change error:", error);
+      setMessage("Could not change admin Gmail. Please try again.");
     } finally {
       setAccountLoading(false);
     }
   }
-
   /* =========================
      CHANGE ADMIN PASSWORD
   ========================= */
@@ -413,50 +398,22 @@ export default function AdminPanel() {
     setAccountLoading(true);
 
     try {
-      if (!passwordOtpStep) {
-        const { error: verifyError } =
-          await supabase.auth.signInWithPassword({
-            email: currentEmail,
-            password: currentPassword,
-          });
-
-        if (verifyError) {
-          setMessage("Current password is incorrect.");
-          return;
-        }
-
-        const { error: reauthError } =
-          await supabase.auth.reauthenticate();
-
-        if (reauthError) {
-          setMessage(
-            `Could not send Gmail verification code: ${reauthError.message}`
-          );
-          return;
-        }
-
-        setPasswordOtp("");
-        setPasswordOtpStep(true);
-        setMessage(
-          "A 6-digit verification code has been sent to the admin Gmail."
-        );
-        return;
-      }
-
-      if (!/^\d{6}$/.test(passwordOtp.trim())) {
-        setMessage("Enter the 6-digit Gmail verification code.");
-        return;
-      }
-
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-        nonce: passwordOtp.trim(),
+      const response = await fetch("/api/admin/account", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "password",
+          currentPassword,
+          newPassword,
+        }),
       });
 
-      if (error) {
-        setMessage(
-          `Could not change password: ${error.message}`
-        );
+      const result = await response.json();
+
+      if (!response.ok) {
+        setMessage(result.error || "Could not change admin password.");
         return;
       }
 
@@ -468,11 +425,13 @@ export default function AdminPanel() {
       });
       setPasswordOtp("");
       setPasswordOtpStep(false);
+    } catch (error) {
+      console.error("Admin password change error:", error);
+      setMessage("Could not change admin password. Please try again.");
     } finally {
       setAccountLoading(false);
     }
   }
-
   /* =========================
      INVESTOR - ADD
   ========================= */
@@ -2693,28 +2652,6 @@ const passwordResponse = await fetch(
                   }
                 />
 
-                {passwordOtpStep && (
-                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                    <label className="block text-sm font-bold text-blue-950">
-                      Gmail Verification Code
-                    </label>
-                    <input
-                      value={passwordOtp}
-                      onChange={(e) =>
-                        setPasswordOtp(
-                          e.target.value.replace(/\D/g, "").slice(0, 6)
-                        )
-                      }
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={6}
-                      placeholder="6-digit code"
-                      className="mt-2 w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-center text-xl tracking-[0.4em] outline-none focus:border-blue-950"
-                    />
-                  </div>
-                )}
-
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="submit"
@@ -2725,23 +2662,8 @@ const passwordResponse = await fetch(
                       ? "Processing..."
                       : passwordOtpStep
                         ? "Verify Code & Change Password"
-                        : "Send Gmail Verification Code"}
+                        : "Change Password"}
                   </button>
-
-                  {passwordOtpStep && (
-                    <button
-                      type="button"
-                      disabled={accountLoading}
-                      onClick={() => {
-                        setPasswordOtp("");
-                        setPasswordOtpStep(false);
-                        setMessage("");
-                      }}
-                      className="rounded-xl border border-slate-300 px-6 py-3 font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                    >
-                      Start Over
-                    </button>
-                  )}
                 </div>
 
               </form>
