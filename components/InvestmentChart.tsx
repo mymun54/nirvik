@@ -27,11 +27,11 @@ export default function InvestmentChart({
   dueAmount,
 }: InvestmentChartProps) {
   const data = [
-    { name: "Investment", value: Number(totalInvestment) || 0 },
-    { name: "Profit", value: Number(totalProfit) || 0 },
-    { name: "Returned", value: Number(totalReturned) || 0 },
-    { name: "Total Return", value: Number(totalReturn) || 0 },
-    { name: "Due", value: Number(dueAmount) || 0 },
+    { name: "Total Investment", value: Number(totalInvestment) || 0 },
+    { name: "Total Profit", value: Number(totalProfit) || 0 },
+    { name: "Total Amount Returned", value: Number(totalReturned) || 0 },
+    { name: "Total Amount Receivable", value: Number(totalReturn) || 0 },
+    { name: "Outstanding Amount", value: Number(dueAmount) || 0 },
   ];
 
   const colors = [
@@ -72,10 +72,10 @@ export default function InvestmentChart({
               tick={{ fontSize: 11 }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(value) => `\u09F3${Number(value || 0).toLocaleString("en-BD")}`}
+              tickFormatter={(value) => `&#2547;${Number(value || 0).toLocaleString("en-BD")}`}
             />
 
-            <Tooltip formatter={(value) => [`\u09F3${Number(value || 0).toLocaleString("en-BD")}`, "Amount"]} />
+            <Tooltip formatter={(value) => [`&#2547;${Number(value || 0).toLocaleString("en-BD")}`, "Amount"]} />
 
             <Bar
               dataKey="value"

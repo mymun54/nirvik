@@ -42,7 +42,6 @@ export default async function DashboardPage() {
   serial_number,
   name,
   email,
-  username,
   phone,
   address,
   total_investment,
@@ -178,7 +177,7 @@ export default async function DashboardPage() {
             </p>
 
             <p className="mt-1 font-bold text-slate-800">
-              {investor.username || investor.email || user.email}
+              {investor.email || user.email}
             </p>
           </div>
         </div>

@@ -41,7 +41,6 @@ export async function POST(request: Request) {
       name,
       nid,
       email,
-      username,
       password,
       total_investment,
       total_return,
@@ -57,13 +56,7 @@ export async function POST(request: Request) {
       typeof email === "string"
         ? email.trim().toLowerCase()
         : "";
-
-    const normalizedUsername =
-      typeof username === "string"
-        ? username.trim().toLowerCase()
-        : "";
-
-    // Validation
+// Validation
     if (!name?.trim()) {
       return NextResponse.json(
         { error: "Investor name is required." },
@@ -77,14 +70,6 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-
-    if (!normalizedUsername) {
-      return NextResponse.json(
-        { error: "Investor username is required." },
-        { status: 400 }
-      );
-    }
-
     if (!password || password.length < 8) {
       return NextResponse.json(
         { error: "Investor password must be at least 8 characters." },
@@ -103,36 +88,6 @@ export async function POST(request: Request) {
         },
       }
     );
-
-    // Check duplicate username in investors table
-    const { data: existingUsername, error: usernameCheckError } =
-      await adminSupabase
-        .from("investors")
-        .select("id, username")
-        .eq("username", normalizedUsername)
-        .maybeSingle();
-
-    if (usernameCheckError) {
-      console.error(
-        "Username check error:",
-        usernameCheckError
-      );
-
-      return NextResponse.json(
-        { error: "Could not check investor username." },
-        { status: 500 }
-      );
-    }
-
-    if (existingUsername) {
-      return NextResponse.json(
-        {
-          error:
-            "This username is already in use. Please choose another username.",
-        },
-        { status: 409 }
-      );
-    }
 
     // Check duplicate email in investors table
     const { data: existingInvestorEmail, error: emailCheckError } =
@@ -245,7 +200,7 @@ export async function POST(request: Request) {
           name: name.trim(),
           nid: nid?.trim() || null,
           email: normalizedEmail,
-          username: normalizedUsername,
+          username: normalizedEmail,
           total_investment:
             Number(total_investment) || 0,
           total_return:

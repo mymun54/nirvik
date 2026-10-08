@@ -11,7 +11,6 @@ type Investor = {
   name: string;
   nid: string | null;
   email: string | null;
-  username: string | null;
   total_investment: number;
   total_return: number;
   total_returned: number;
@@ -20,6 +19,14 @@ type Investor = {
   phone: string | null;
   address: string | null;
   is_active: boolean;
+  area_id: string | null;
+};
+
+type Area = {
+  id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
 };
 
 type Project = {
@@ -53,10 +60,16 @@ export default function AdminPanel() {
     | "market"
     | "website"
     | "account"
+    | "areas"
     | "investment-history"
   >("overview");
 
   const [investors, setInvestors] = useState<Investor[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [areaForm, setAreaForm] = useState({ name: "", is_active: true });
+  const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
+
+  const groupedInvestors = [...areas.map((area) => ({ id: area.id, name: area.name })), { id: "unassigned", name: "Unassigned Area" }].map((group) => ({ ...group, investors: investors.filter((investor) => (investor.area_id || "unassigned") === group.id) })).filter((group) => group.investors.length > 0);
   const [selectedInvestor, setSelectedInvestor] = useState<Investor | null>(null);
   const [editingInvestorId, setEditingInvestorId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -94,7 +107,6 @@ export default function AdminPanel() {
     name: "",
     nid: "",
     email: "",
-    username: "",
     password: "",
     total_investment: "0",
     total_return: "0",
@@ -103,6 +115,7 @@ export default function AdminPanel() {
     profit: "0",
     phone: "",
     address: "",
+    area_id: "",
   });
 
   /* =========================
@@ -176,6 +189,7 @@ export default function AdminPanel() {
       projectsResult,
       tickersResult,
       siteResult,
+      areasResult,
     ] = await Promise.all([
       supabase
         .from("investors")
@@ -203,8 +217,14 @@ export default function AdminPanel() {
         .select("*")
         .limit(1)
         .maybeSingle(),
-    ]);
 
+      supabase
+        .from("areas")
+        .select("id, name, is_active, created_at")
+        .order("name", {
+          ascending: true,
+        }),
+    ]);
     const errors: string[] = [];
 
     if (investorsResult.error) {
@@ -231,9 +251,16 @@ export default function AdminPanel() {
       );
     }
 
+    if (areasResult.error) {
+      setAreas([]);
+    }
+
     if (errors.length > 0) {
       setMessage(errors.join(" | "));
+      return;
     }
+
+    setAreas(areasResult.data || []);
 
     setInvestors(
       (investorsResult.data || []).map((item) => ({
@@ -288,6 +315,91 @@ export default function AdminPanel() {
     loadAll();
     loadAdminAccount();
   }, []);
+
+  async function addArea(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setMessage("");
+
+    const name = areaForm.name.trim();
+
+    if (!name) {
+      setMessage("Area name is required.");
+      return;
+    }
+
+    const { error } = await supabase.from("areas").insert({
+      name,
+      is_active: areaForm.is_active,
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setAreaForm({ name: "", is_active: true });
+    await loadAll();
+    setMessage("Area added successfully.");
+  }
+
+  function startEditArea(area: Area) {
+    setEditingAreaId(area.id);
+    setAreaForm({ name: area.name, is_active: area.is_active });
+  }
+
+  function cancelEditArea() {
+    setEditingAreaId(null);
+    setAreaForm({ name: "", is_active: true });
+  }
+
+  async function updateArea(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setMessage("");
+
+    if (!editingAreaId) return;
+
+    const name = areaForm.name.trim();
+    if (!name) {
+      setMessage("Area name is required.");
+      return;
+    }
+
+    const { error } = await supabase.from("areas").update({
+      name,
+      is_active: areaForm.is_active,
+    }).eq("id", editingAreaId);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    cancelEditArea();
+    await loadAll();
+    setMessage("Area updated successfully.");
+  }
+
+  async function deleteArea(id: string) {
+    setMessage("");
+
+    const assignedInvestor = investors.some((investor) => investor.area_id === id);
+    if (assignedInvestor) {
+      setMessage("This area cannot be deleted while investors are assigned to it.");
+      return;
+    }
+
+    const confirmed = window.confirm("Are you sure you want to delete this area?");
+    if (!confirmed) return;
+
+    const { error } = await supabase.from("areas").delete().eq("id", id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    await loadAll();
+    setMessage("Area deleted successfully.");
+  }
 
   /* =========================
      CHANGE ADMIN EMAIL
@@ -451,13 +563,7 @@ export default function AdminPanel() {
       setMessage("Investor email is required.");
       return;
     }
-
-    if (!investorForm.username.trim()) {
-      setMessage("Investor username is required.");
-      return;
-    }
-
-    if (!investorForm.password) {
+if (!investorForm.password) {
       setMessage("Investor password is required.");
       return;
     }
@@ -485,9 +591,7 @@ export default function AdminPanel() {
             nid:
               investorForm.nid.trim() || null,
             email: investorForm.email.trim(),
-            username:
-              investorForm.username.trim(),
-            password: investorForm.password,
+password: investorForm.password,
             total_investment: Number(
               investorForm.total_investment
             ),
@@ -507,6 +611,7 @@ export default function AdminPanel() {
               investorForm.phone.trim() || null,
             address:
               investorForm.address.trim() || null,
+            area_id: investorForm.area_id || null,
             is_active: true,
           }),
         }
@@ -532,7 +637,6 @@ export default function AdminPanel() {
         name: "",
         nid: "",
         email: "",
-        username: "",
         password: "",
         total_investment: "0",
         total_return: "0",
@@ -541,6 +645,7 @@ export default function AdminPanel() {
         profit: "0",
         phone: "",
         address: "",
+        area_id: "",
       });
 
       await loadAll();
@@ -575,7 +680,6 @@ export default function AdminPanel() {
       name: investor.name || "",
       nid: investor.nid || "",
       email: investor.email || "",
-      username: investor.username || "",
       password: "",
       total_investment: String(investor.total_investment ?? 0),
       total_return: String(investor.total_return ?? 0),
@@ -584,6 +688,7 @@ export default function AdminPanel() {
       profit: String(investor.profit ?? 0),
       phone: investor.phone || "",
       address: investor.address || "",
+      area_id: investor.area_id || "",
     });
     setMessage("");
   }
@@ -599,7 +704,6 @@ export default function AdminPanel() {
       name: "",
       nid: "",
       email: "",
-      username: "",
       password: "",
       total_investment: "0",
       total_return: "0",
@@ -608,6 +712,7 @@ export default function AdminPanel() {
       profit: "0",
       phone: "",
       address: "",
+      area_id: "",
     });
   }
 
@@ -630,13 +735,7 @@ export default function AdminPanel() {
       setMessage("Investor email is required.");
       return;
     }
-
-    if (!investorForm.username.trim()) {
-      setMessage("Investor username is required.");
-      return;
-    }
-
-    if (investorForm.password && investorForm.password.length < 8) {
+if (investorForm.password && investorForm.password.length < 8) {
       setMessage("New password must be at least 8 characters.");
       return;
     }
@@ -662,7 +761,6 @@ export default function AdminPanel() {
         name: investorForm.name.trim(),
         nid: investorForm.nid.trim() || null,
         email: investorForm.email.trim().toLowerCase(),
-        username: investorForm.username.trim().toLowerCase(),
         total_investment: numericValues[1],
         total_return: numericValues[2],
         total_returned: numericValues[3],
@@ -670,6 +768,7 @@ export default function AdminPanel() {
         profit: numericValues[5],
         phone: investorForm.phone.trim() || null,
         address: investorForm.address.trim() || null,
+        area_id: investorForm.area_id || null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", editingInvestorId);
@@ -1297,13 +1396,10 @@ const passwordResponse = await fetch(
             ["market", "Market Live"],
             ["website", "Website"],
             ["account", "Admin Account"],
-            [
-              "investment-history",
-              "Investment History",
-            ],
+            ["investment-history", "Investment History"],
+            ["areas", "Areas"],
           ].map(([key, label]) => (
             <button
-              type="button"
               key={key}
               onClick={() =>
                 setTab(key as typeof tab)
@@ -1363,8 +1459,7 @@ const passwordResponse = await fetch(
               </h3>
 
               <p className="mt-3 max-w-2xl leading-8 text-slate-600">
-                এখান থেকে investor, project, market এবং
-                website content পরিচালনা করা যাবে।
+                Manage investors, projects, market data, and website content from here.
               </p>
 
             </div>
@@ -1423,18 +1518,6 @@ const passwordResponse = await fetch(
                   }
                 />
 
-                <Input
-                  label="Username"
-                  value={
-                    investorForm.username
-                  }
-                  onChange={(v) =>
-                    setInvestorForm({
-                      ...investorForm,
-                      username: v,
-                    })
-                  }
-                />
 
                 <Input
                   label="Email"
@@ -1481,6 +1564,31 @@ const passwordResponse = await fetch(
                     })
                   }
                 />
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-blue-950">
+                    Area
+                  </label>
+                  <select
+                    value={investorForm.area_id}
+                    onChange={(e) =>
+                      setInvestorForm({
+                        ...investorForm,
+                        area_id: e.target.value,
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none"
+                  >
+                    <option value="">Select Area</option>
+                    {areas
+                      .filter((area) => area.is_active)
+                      .map((area) => (
+                        <option key={area.id} value={area.id}>
+                          {area.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
 
                 <Input
                   label="Total Investment"
@@ -1588,7 +1696,7 @@ const passwordResponse = await fetch(
                   <Input label="Serial" value={investorForm.serial_number} onChange={(v) => setInvestorForm({ ...investorForm, serial_number: v })} />
                   <Input label="Name" value={investorForm.name} onChange={(v) => setInvestorForm({ ...investorForm, name: v })} />
                   <Input label="NID" value={investorForm.nid} onChange={(v) => setInvestorForm({ ...investorForm, nid: v })} />
-                  <Input label="Username" value={investorForm.username} onChange={(v) => setInvestorForm({ ...investorForm, username: v })} />
+
                   <Input label="Email" value={investorForm.email} onChange={(v) => setInvestorForm({ ...investorForm, email: v })} />
                   <PasswordInput
                     label="New Password (optional)"
@@ -1602,6 +1710,19 @@ const passwordResponse = await fetch(
                   />
                   <Input label="Phone" value={investorForm.phone} onChange={(v) => setInvestorForm({ ...investorForm, phone: v })} />
                   <Input label="Address" value={investorForm.address} onChange={(v) => setInvestorForm({ ...investorForm, address: v })} />
+                  <div>
+                    <label className="mb-2 block text-sm font-bold text-blue-950">Area</label>
+                    <select
+                      value={investorForm.area_id}
+                      onChange={(e) => setInvestorForm({ ...investorForm, area_id: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none"
+                    >
+                      <option value="">Select Area</option>
+                      {areas.filter((area) => area.is_active).map((area) => (
+                        <option key={area.id} value={area.id}>{area.name}</option>
+                      ))}
+                    </select>
+                  </div>
                   <Input label="Total Investment" value={investorForm.total_investment} onChange={(v) => setInvestorForm({ ...investorForm, total_investment: v })} />
                   <Input label="Total Amount Receivable" value={investorForm.total_return} onChange={(v) => setInvestorForm({ ...investorForm, total_return: v })} />
                   <Input label="Total Amount Returned" value={investorForm.total_returned} onChange={(v) => setInvestorForm({ ...investorForm, total_returned: v })} />
@@ -1643,16 +1764,15 @@ const passwordResponse = await fetch(
                 <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   {[
                     ["Serial", selectedInvestor.serial_number],
-                    ["NID", selectedInvestor.nid || "—"],
-                    ["Email", selectedInvestor.email || "—"],
-                    ["Username", selectedInvestor.username || "—"],
-                    ["Phone", selectedInvestor.phone || "—"],
-                    ["Address", selectedInvestor.address || "—"],
-                    ["Total Investment", `৳${Number(selectedInvestor.total_investment).toLocaleString()}`],
-                    ["Total Amount Receivable", `৳${Number(selectedInvestor.total_return).toLocaleString()}`],
-                    ["Total Amount Returned", `৳${Number(selectedInvestor.total_returned).toLocaleString()}`],
-                    ["Outstanding Amount", `৳${Number(selectedInvestor.due_amount).toLocaleString()}`],
-                    ["Total Profit", `৳${Number(selectedInvestor.profit).toLocaleString()}`],
+                    ["NID", selectedInvestor.nid || "-"],
+                    ["Email", selectedInvestor.email || "-"],
+                    ["Phone", selectedInvestor.phone || "-"],
+                    ["Address", selectedInvestor.address || "-"],
+                    ["Total Investment", `\u09F3${Number(selectedInvestor.total_investment).toLocaleString()}`],
+                    ["Total Amount Receivable", `\u09F3${Number(selectedInvestor.total_return).toLocaleString()}`],
+                    ["Total Amount Returned", `\u09F3${Number(selectedInvestor.total_returned).toLocaleString()}`],
+                    ["Outstanding Amount", `\u09F3${Number(selectedInvestor.due_amount).toLocaleString()}`],
+                    ["Total Profit", `\u09F3${Number(selectedInvestor.profit).toLocaleString()}`],
                     ["Status", selectedInvestor.is_active ? "Active" : "Inactive"],
                   ].map(([label, value]) => (
                     <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -1688,12 +1808,7 @@ const passwordResponse = await fetch(
                       <th className="px-5 py-4">
                         Name
                       </th>
-
-                      <th className="px-5 py-4">
-                        Username
-                      </th>
-
-                      <th className="px-5 py-4">
+<th className="px-5 py-4">
                         Investment
                       </th>
 
@@ -1721,24 +1836,24 @@ const passwordResponse = await fetch(
                     {investors.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={8}
+                          colSpan={7}
                           className="px-5 py-10 text-center text-slate-500"
                         >
                           No investors found.
                         </td>
                       </tr>
                     ) : (
-                      investors.map(
-                        (investor) => (
+                      groupedInvestors.flatMap((group) => [
+                        <tr key={group.id} className="border-t border-slate-200 bg-blue-50">
+                          <td colSpan={7} className="px-5 py-3 text-base font-black text-blue-950">{group.name}</td>
+                        </tr>,
+                        ...group.investors.map((investor) => (
                           <tr
                             key={investor.id}
                             className="border-t border-slate-200"
                           >
-
                             <td className="px-5 py-4">
-                              {
-                                investor.serial_number
-                              }
+                              {investor.serial_number}
                             </td>
 
                             <td className="px-5 py-4 font-bold">
@@ -1746,34 +1861,25 @@ const passwordResponse = await fetch(
                             </td>
 
                             <td className="px-5 py-4">
-                              {investor.username ||
-                                "—"}
-                            </td>
-
-                            <td className="px-5 py-4">
-                              ৳
-                              {Number(
+                              {"\u09F3"}{Number(
                                 investor.total_investment
                               ).toLocaleString()}
                             </td>
 
                             <td className="px-5 py-4">
-                              ৳
-                              {Number(
+                              {"\u09F3"}{Number(
                                 investor.total_return
                               ).toLocaleString()}
                             </td>
 
                             <td className="px-5 py-4 text-red-600">
-                              ৳
-                              {Number(
+                              {"\u09F3"}{Number(
                                 investor.due_amount
                               ).toLocaleString()}
                             </td>
 
                             <td className="px-5 py-4 text-emerald-600">
-                              ৳
-                              {Number(
+                              {"\u09F3"}{Number(
                                 investor.profit
                               ).toLocaleString()}
                             </td>
@@ -1805,10 +1911,9 @@ const passwordResponse = await fetch(
                                 </button>
                               </div>
                             </td>
-
                           </tr>
-                        )
-                      )
+                        ))
+                      ])
                     )}
 
                   </tbody>
@@ -1819,6 +1924,119 @@ const passwordResponse = await fetch(
 
             </div>
 
+          </section>
+        )}
+
+        {/* AREAS */}
+
+        {tab === "areas" && (
+          <section className="mt-8 space-y-8">
+            <div className="rounded-2xl border border-slate-200 bg-white p-7">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-black text-blue-950">
+                    {editingAreaId ? "Edit Area" : "Add Area"}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Create, edit, activate, deactivate, or delete investor areas.
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={editingAreaId ? updateArea : addArea} className="mt-6 grid gap-4 md:grid-cols-[1fr_auto_auto] md:items-end">
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
+                    Area Name
+                  </label>
+                  <input
+                    type="text"
+                    value={areaForm.name}
+                    onChange={(e) => setAreaForm({ ...areaForm, name: e.target.value })}
+                    placeholder="e.g. Mirpur"
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-600"
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 pb-3 text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={areaForm.is_active}
+                    onChange={(e) => setAreaForm({ ...areaForm, is_active: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  Active
+                </label>
+
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    className="rounded-xl bg-blue-700 px-5 py-3 font-bold text-white hover:bg-blue-800"
+                  >
+                    {editingAreaId ? "Update Area" : "Add Area"}
+                  </button>
+                  {editingAreaId && (
+                    <button
+                      type="button"
+                      onClick={cancelEditArea}
+                      className="rounded-xl border border-slate-300 px-5 py-3 font-bold text-slate-700 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-7">
+              <h2 className="text-2xl font-black text-blue-950">Area List</h2>
+
+              <div className="mt-5 overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-sm text-slate-500">
+                      <th className="px-4 py-3">Area</th>
+                      <th className="px-4 py-3">Investors</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {areas.map((area) => {
+                      const investorCount = investors.filter((investor) => investor.area_id === area.id).length;
+                      return (
+                        <tr key={area.id} className="border-t border-slate-100">
+                          <td className="px-4 py-4 font-bold text-slate-900">{area.name}</td>
+                          <td className="px-4 py-4 text-slate-600">{investorCount}</td>
+                          <td className="px-4 py-4">
+                            <span className={`rounded-full px-3 py-1 text-xs font-bold ${area.is_active ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"}`}>
+                              {area.is_active ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => startEditArea(area)}
+                                className="rounded-lg border border-blue-200 px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-50"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteArea(area.id)}
+                                className="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-50"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
         )}
 
@@ -1975,11 +2193,11 @@ const passwordResponse = await fetch(
 
                     <p className="mt-2 text-sm text-slate-500">
                       {project.location ||
-                        "—"}
+                        "â€”"}
                     </p>
 
                     <p className="mt-1 text-sm font-semibold text-slate-500">
-                      {project.sector || "—"}
+                      {project.sector || "â€”"}
                     </p>
 
                     <p className="mt-4 text-sm leading-7 text-slate-600">
@@ -2172,10 +2390,7 @@ const passwordResponse = await fetch(
                   Live Market Items
                 </h2>
 
-                <p className="mt-1 text-sm text-slate-500">
-                  এখান থেকে public website-এর Market
-                  Live information নিয়ন্ত্রণ করা যাবে।
-                </p>
+                <p className="mt-1 text-sm text-slate-500">Manage the market information displayed on the public website from here.</p>
 
               </div>
 
@@ -2183,7 +2398,7 @@ const passwordResponse = await fetch(
 
                 {tickers.length === 0 ? (
                   <div className="p-10 text-center text-slate-500">
-                    কোনো Market Item এখনো যোগ করা হয়নি।
+                    No Market Items have been added yet.
                   </div>
                 ) : (
                   tickers.map((ticker) => (
@@ -2204,10 +2419,7 @@ const passwordResponse = await fetch(
                                 : "flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-xl font-black text-red-600"
                             }
                           >
-                            {ticker.direction ===
-                            "up"
-                              ? "↑"
-                              : "↓"}
+                            {ticker.direction === "up" ? "\u2191" : "\u2193"}
                           </div>
 
                           <div>
@@ -2278,10 +2490,7 @@ const passwordResponse = await fetch(
                                   : "mt-1 font-black text-red-600"
                               }
                             >
-                              {ticker.direction ===
-                              "up"
-                                ? "+"
-                                : "-"}
+                              {ticker.direction === "up" ? "\u2191" : "\u2193"}
                               {Math.abs(
                                 Number(
                                   ticker.change_percent
@@ -2516,10 +2725,7 @@ const passwordResponse = await fetch(
                 Admin Account
               </h2>
 
-              <p className="mt-2 text-sm leading-7 text-slate-500">
-                এখান থেকে administrator login email এবং
-                password পরিবর্তন করা যাবে।
-              </p>
+              <p className="mt-2 text-sm leading-7 text-slate-500">Update the administrator login email and password from here.</p>
 
               <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
 
@@ -2544,11 +2750,7 @@ const passwordResponse = await fetch(
                 Change Admin Gmail
               </h3>
 
-              <p className="mt-2 text-sm leading-7 text-slate-500">
-                নিরাপত্তার জন্য বর্তমান password দিতে হবে।
-                Email change করার পরে Supabase-এর email
-                confirmation সম্পন্ন করতে হবে।
-              </p>
+              <p className="mt-2 text-sm leading-7 text-slate-500">Enter a new admin email and your current password. Supabase may send an email confirmation.</p>
 
               <form
                 onSubmit={changeAdminEmail}
@@ -2603,10 +2805,7 @@ const passwordResponse = await fetch(
                 Change Admin Password
               </h3>
 
-              <p className="mt-2 text-sm leading-7 text-slate-500">
-                Password পরিবর্তনের আগে বর্তমান password
-                verify করা হবে।
-              </p>
+              <p className="mt-2 text-sm leading-7 text-slate-500">To change your password, you must verify your current password.</p>
 
               <form
                 onSubmit={changeAdminPassword}
@@ -2678,17 +2877,9 @@ const passwordResponse = await fetch(
                 Security Notice
               </h3>
 
-              <p className="mt-2 text-sm leading-7 text-amber-800">
-                Current password browser-এ save করা হয় না।
-                Verification সরাসরি Supabase Authentication-এর
-                মাধ্যমে করা হয়।
-              </p>
+              <p className="mt-2 text-sm leading-7 text-amber-800">Your current password is not saved in the browser.</p>
 
-              <p className="mt-2 text-sm leading-7 text-amber-800">
-                পরবর্তী ধাপে চাইলে Admin Login এবং sensitive
-                account changes-এর জন্য email OTP / reauthentication
-                security যোগ করা যাবে।
-              </p>
+              <p className="mt-2 text-sm leading-7 text-amber-800">For sensitive account changes, Admin Login may require email OTP or reauthentication.</p>
 
             </div>
 
