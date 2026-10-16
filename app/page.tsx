@@ -268,14 +268,8 @@ export default async function Home() {
       .limit(1)
       .maybeSingle(),
 
-    // ACTIVE INVESTOR COUNT
-    supabase
-      .from("investors")
-      .select("id", {
-        count: "exact",
-        head: true,
-      })
-      .eq("is_active", true),
+    // ACTIVE INVESTOR COUNT via secure RPC
+    supabase.rpc("get_public_investor_count"),
   ]);
 
   if (marketsResult.error) {
@@ -338,7 +332,7 @@ export default async function Home() {
       email: null,
     };
 
-  const investorCount = investorsResult.count || 0;
+  const investorCount = Number(investorsResult.data ?? 0);
   const projectCount = projects.length;
   const marketCount = markets.length;
 
